@@ -114,6 +114,71 @@ select:focus,input:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 
 .tooltip-btn::after{content:attr(title);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;font-size:11px;font-weight:500;white-space:nowrap;padding:4px 8px;border-radius:5px;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999;font-family:'Outfit',sans-serif}
 .tooltip-btn::before{content:'';position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);border:4px solid transparent;border-top-color:#0f172a;pointer-events:none;opacity:0;transition:opacity .15s;z-index:999}
 .tooltip-btn:hover::after,.tooltip-btn:hover::before{opacity:1}
+.sidebar-toggle{display:none}
+.sidebar-overlay{display:none;position:fixed;inset:0;top:0;background:rgba(0,0,0,.5);z-index:199}
+.sidebar-overlay.open{display:block}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;top:0;z-index:200;box-shadow:4px 0 24px rgba(0,0,0,.18);width:260px!important}
+  .sidebar.open{transform:translateX(0)}
+  .content-wrap{margin-left:0!important}
+  .topbar{padding:0 10px;gap:6px;height:52px}
+  .sidebar-toggle{display:flex!important;align-items:center;justify-content:center;width:38px;height:38px;border-radius:8px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:22px;cursor:pointer;flex-shrink:0}
+  .main{padding:14px}
+  .page-header{flex-direction:column;align-items:flex-start;gap:10px;padding-bottom:12px}
+  .page-header h1{font-size:18px}
+  .page-header>div:last-child{display:flex;flex-wrap:wrap;gap:6px;width:100%}
+  .page-header .btn{flex:1;min-width:120px;justify-content:center}
+  .stats-grid{grid-template-columns:repeat(2,1fr)!important;gap:10px}
+  .stat-card{padding:12px}
+  .stat-value{font-size:16px}
+  .stat-sub{font-size:11px}
+  .stat-ico{font-size:20px}
+  .card{padding:12px;margin-bottom:14px}
+  .card-title{font-size:14px}
+  .two-col{grid-template-columns:1fr!important}
+  .form-row.c2,.form-row.c3,.form-row.c4{grid-template-columns:1fr!important}
+  .form-field{margin-bottom:14px}
+  select,input[type=text],input[type=number],input[type=date],input[type=email],input[type=password],input[type=month],input[type=color],textarea{font-size:16px!important;padding:12px 14px!important;min-height:46px!important;border-radius:8px!important}
+  textarea{min-height:80px!important}
+  .btn{padding:10px 14px;font-size:13px}
+  .btn-sm{padding:7px 10px;font-size:12px}
+  .btn-row{flex-direction:column;gap:8px}
+  .btn-row .btn{width:100%;justify-content:center}
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px}
+  table{min-width:520px;font-size:12px}
+  th{padding:9px 10px;font-size:10px}
+  td{padding:9px 10px;font-size:12px}
+  .modal-overlay{padding:8px;align-items:flex-end}
+  .modal{width:100vw!important;max-width:100vw!important;padding:20px 14px 28px!important;max-height:95vh!important;overflow-y:auto!important;border-radius:18px 18px 0 0!important;margin:0!important}
+  .modal-title{font-size:16px}
+  .modal-footer{flex-direction:column;gap:8px}
+  .modal-footer .btn{width:100%!important;padding:14px!important;font-size:15px!important;justify-content:center}
+  .lft{display:none!important}
+  .rgt{width:100%!important;padding:28px 20px!important;min-height:100vh}
+  .rgt-inner{max-width:100%!important}
+  .wc-title{font-size:28px!important}
+  #topbar-empresa{display:none}
+  [style*="grid-template-columns:1fr 1fr 1fr 1fr"]{display:grid!important;grid-template-columns:1fr 1fr!important}
+  [style*="grid-template-columns:repeat(4,1fr)"]{display:grid!important;grid-template-columns:1fr 1fr!important}
+  [style*="grid-template-columns:repeat(3,1fr)"]{display:grid!important;grid-template-columns:1fr!important}
+  .chart-bar-label{width:100px!important;font-size:11px}
+  .chart-bar-val{width:80px!important;font-size:11px}
+  .sidebar .nav-item{padding:10px 16px;font-size:13px}
+}
+@media(min-width:769px) and (max-width:1024px){
+  .sidebar{width:200px}
+  .content-wrap{margin-left:200px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)!important}
+  .main{padding:18px}
+}
+@media(max-width:900px) and (orientation:landscape){
+  .form-row.c2{grid-template-columns:1fr 1fr!important}
+  .form-row.c3{grid-template-columns:1fr 1fr!important}
+  .modal{max-height:90vh!important;border-radius:12px!important}
+  .modal-overlay{align-items:center;padding:12px}
+  .lft{display:none!important}
+  .rgt{width:100%!important}
+}
 </style>
 <script>
 (function(){
