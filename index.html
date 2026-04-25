@@ -334,7 +334,7 @@ const ss=(k,v)=>{try{localStorage.setItem('ds_'+k,JSON.stringify(v))}catch{}};
 // DEFAULT CONFIG
 const defaultConfig={
   empresa:'',rnc:'',telefono:'',direccion:'',correo:'',moneda:'RD$',logoData:'',
-  prefijoCodigo:'',tasaCambio:60,propietarios:[],
+  prefijoCodigo:'K',tasaCambio:60,propietarios:[],
   cuentas:['Caja General','Banco Popular','Banco BHD','Banco BanReservas'],
   responsable:'',observacionRecibo:'',
   roles:[
@@ -811,7 +811,7 @@ function renderInvChart(){
 }
 
 // ══ INVENTARIO ══
-function getPrefijo(){return DB.config.prefijoCodigo||(DB.config.empresa?DB.config.empresa[0].toUpperCase():'F');}
+function getPrefijo(){return DB.config.prefijoCodigo||'K';}
 function generarCodigo(){
   const pref=getPrefijo();
   const nums=DB.vehiculos.map(v=>{const m=(v.codigo||'').match(/(\d+)$/);return m?parseInt(m[1]):0;});
