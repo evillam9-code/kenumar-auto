@@ -5114,7 +5114,7 @@ function renderCXC(){
         ${currentUser?.role==='admin'?`<button id="cxc-btn-eliminar" disabled class="btn btn-sm" style="${ds}" onclick="cxcAccion('eliminar')">🗑 Eliminar</button>`:''}
         <div style="width:1px;height:28px;background:var(--gray3);margin:0 2px"></div>
         <button class="btn btn-secondary btn-sm" onclick="imprimirCXC()">📄 PDF</button>
-        ${currentUser?.role==='admin'?`<button class="btn btn-primary" onclick="nuevaCXCManual()">➕ Nueva CxC</button>`:''}
+        <button class="btn btn-primary" onclick="nuevaCXCManual()">➕ Nueva CxC</button>
       </div>
     </div>
 
