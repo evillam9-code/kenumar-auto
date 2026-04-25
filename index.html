@@ -88,9 +88,9 @@ select:focus,input:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 
 .modal{background:#fff;border-radius:14px;padding:28px;width:100%;max-width:680px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
 .modal-title{font-size:17px;font-weight:700;margin-bottom:20px;color:var(--navy)}
 .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--gray3)}
-.toast{position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(-120px);background:var(--navy);color:#fff;padding:16px 32px;border-radius:var(--radius);font-size:15px;font-weight:700;z-index:99999;opacity:0;transition:.35s cubic-bezier(.4,0,.2,1);max-width:420px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.25);pointer-events:none}
+.toast{position:fixed;top:28px;left:50%;transform:translateX(-50%) translateY(-200px);background:#1e293b;color:#fff;padding:18px 36px;border-radius:12px;font-size:16px;font-weight:700;z-index:2147483647;opacity:0;transition:.4s cubic-bezier(.4,0,.2,1);max-width:460px;min-width:280px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.4);pointer-events:none;border:2px solid rgba(255,255,255,.15)}
 .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
-.toast.success{background:var(--green)}.toast.error{background:var(--red)}.toast.warning{background:var(--amber)}
+.toast.success{background:#16a34a;border-color:#22c55e}.toast.error{background:#dc2626;border-color:#ef4444}.toast.warning{background:#d97706;border-color:#f59e0b}
 .search-wrap{margin-bottom:14px}
 .search-input{width:100%;padding:9px 14px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px;font-family:'Outfit',sans-serif;outline:none;background:var(--gray2)}
 .search-input:focus{border-color:var(--blue);background:#fff}
@@ -1008,15 +1008,20 @@ function formVehiculo(v){
 
 function nuevoVehiculo(){
   openModal('➕ Nuevo Registro de Vehículo',formVehiculo(null),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarVehiculo()">💾 Guardar Vehículo</button>`);
-  // Esperar a que Firebase cargue config antes de generar el código con el prefijo correcto
+  // Esperar a que Firebase cargue config global antes de generar código con prefijo correcto
   const _intentarGenerar=(intentos)=>{
     if(window._fbCargado||!window._fbActivo||intentos<=0){
-      setTimeout(generarCodigo,100);
+      setTimeout(()=>{
+        generarCodigo();
+        // Actualizar el placeholder también con el prefijo correcto
+        const inp=document.getElementById('v-cod');
+        if(inp&&inp.value==='')inp.placeholder=getPrefijo()+'-0001';
+      },150);
     } else {
-      setTimeout(()=>_intentarGenerar(intentos-1),400);
+      setTimeout(()=>_intentarGenerar(intentos-1),500);
     }
   };
-  _intentarGenerar(10);
+  _intentarGenerar(15);
 }
 function editarVehiculo(id){const v=DB.vehiculos.find(x=>x.id===id);if(!v)return;openModal('✏️ Editar Registro de Vehículo',formVehiculo(v),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarVehiculo('${id}')">💾 Actualizar</button>`);}
 
@@ -2689,17 +2694,20 @@ function guardarConfig(){
   const colores={};
   _colorIds.forEach(id=>{const el=document.getElementById('cf-color-'+id);if(el)colores[id]=el.value;});
   DB.config.colores=colores;
-  aplicarColoresSistema();
   // Guardar compañías de seguros
   const compSeg=[];document.querySelectorAll('[id^="cf-seguro-"]').forEach(inp=>{const v=inp.value.trim();if(v)compSeg.push(v);});
   DB.config.companiasSeguro=compSeg.length?compSeg:['Universal','Mapfre BHD','Reservas','Otra'];
+  // Guardar en localStorage
   sDB('config');
+  // Actualizar topbar y logo
   const emp=document.getElementById('topbar-empresa');
   if(emp&&DB.config.empresa)emp.textContent=DB.config.empresa;
   actualizarLogoSidebar();
-  // Mostrar mensaje inmediatamente
+  // Aplicar colores DESPUÉS de guardar
+  aplicarColoresSistema();
+  // MOSTRAR TOAST PRIMERO antes de cualquier otra operación async
   toast('✅ Configuración guardada correctamente','success');
-  // Sincronizar con Firebase en segundo plano
+  // Sincronizar con Firebase
   if(typeof fbGuardar==='function'&&window._fbActivo){
     fbGuardar('config').catch(e=>console.warn('FB config save:',e));
   }
@@ -6884,20 +6892,19 @@ async function fbCargar(){
               DB.config.logoData=logoVal;
             }
           } else if(key==='config' && typeof val==='object' && val!==null){
-            // Merge config: Firebase siempre tiene prioridad en campos de empresa
-            // Solo usar local como fallback si Firebase no tiene el valor
+            // Firebase es la fuente de verdad para config global de empresa
+            // Sobreescribir completamente con Firebase, solo conservar preferencias locales del usuario
+            const localOnly=['_localPref']; // campos solo locales (ninguno por ahora)
             const merged=Object.assign({},DB[key]);
+            // Firebase sobreescribe TODO - es la config global compartida
             Object.keys(val).forEach(k=>{
-              // Arrays especiales: fusionar (no sobreescribir)
-              if(Array.isArray(val[k])&&Array.isArray(merged[k])){
-                // Firebase tiene prioridad en arrays también
-                merged[k]=val[k];
-              } else if(val[k]!==null && val[k]!==undefined){
-                // Firebase sobreescribe siempre (incluso string vacío es válido para prefijo)
+              if(!localOnly.includes(k) && val[k]!==null && val[k]!==undefined){
                 merged[k]=val[k];
               }
             });
             DB[key]=merged;
+            // Actualizar localStorage con la config de Firebase para que persista
+            try{localStorage.setItem('ds_config',JSON.stringify(merged));}catch(e){}
           } else {
             DB[key]=val;
           }
@@ -6959,9 +6966,11 @@ function fbActivarListeners(){
         } else if(key==='config'&&typeof val==='object'&&val!==null){
           const merged=Object.assign({},DB.config);
           Object.keys(val).forEach(k=>{
-            if(Array.isArray(val[k])&&Array.isArray(merged[k])){merged[k]=val[k];}else if(val[k]!==null&&val[k]!==undefined){merged[k]=val[k];}
+            if(val[k]!==null&&val[k]!==undefined){merged[k]=val[k];}
           });
           DB.config=merged;
+          // Persistir en localStorage para que otros usuarios lo tengan al recargar
+          try{localStorage.setItem('ds_config',JSON.stringify(merged));}catch(e){}
           // Actualizar topbar y sidebar
           const empEl=document.getElementById('topbar-empresa');
           if(empEl&&DB.config.empresa)empEl.textContent=DB.config.empresa;
