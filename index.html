@@ -6956,6 +6956,24 @@ function fbActivarListeners(){
             if(!merged.find(u=>u.id===lu.id))merged.push(lu);
           });
           DB.users=merged.length>0?merged:DB.users;
+          // Actualizar currentUser con los nuevos permisos en tiempo real
+          if(currentUser){
+            const updated=DB.users.find(u=>u.id===currentUser.id);
+            if(updated){
+              currentUser=updated;
+              // Re-aplicar permisos del menú inmediatamente
+              if(typeof aplicarPermisosNav==='function') aplicarPermisosNav();
+              // Si el usuario ya no tiene acceso a la página actual, redirigir al dashboard
+              const activePage=document.querySelector('.page.active');
+              if(activePage){
+                const pid=activePage.id.replace('page-','');
+                if(pid!=='dashboard'&&currentUser.role!=='admin'&&!canAccess(pid)){
+                  if(typeof showPage==='function') showPage('dashboard');
+                  toast('Tu acceso a este módulo fue modificado','warning');
+                }
+              }
+            }
+          }
         } else if(key==='config_logo'){
           const logoVal=typeof val==='string'?val:(val&&val.logoData?val.logoData:'');
           if(logoVal&&logoVal.startsWith('data:')){
