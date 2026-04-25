@@ -2312,8 +2312,27 @@ function guardarUsuario(idx){
   const pass=document.getElementById('u-pass').value;
   if(!nombre||!user||(!pass&&idx===undefined)){toast('Complete todos los campos','error');return;}
   if(idx===undefined&&DB.users.find(u=>u.username===user)){toast('El usuario ya existe','error');return;}
-  if(idx!==undefined){DB.users[idx].nombre=nombre;DB.users[idx].username=user;DB.users[idx].role=document.getElementById('u-role').value;if(pass)DB.users[idx].password=pass;}
-  else DB.users.push({id:uid(),nombre,username:user,password:pass,role:document.getElementById('u-role').value,activo:true});
+  const role=document.getElementById('u-role').value;
+  // Guardar módulos seleccionados
+  const MODS_IDS=['dashboard','informes','suplidores','inventario','gastosVeh','cxp','clientes','ventas','cxc','gastos','nomina','caja','cotizaciones','autorizaciones'];
+  const modulos=role==='admin'?MODS_IDS:MODS_IDS.filter(id=>document.getElementById('u-mod-'+id)?.checked);
+  // Guardar permisos de acción
+  const permisos={
+    editar:role==='admin'||!!document.getElementById('u-perm-editar')?.checked,
+    eliminar:role==='admin'||!!document.getElementById('u-perm-eliminar')?.checked,
+    imprimir:role==='admin'||!!document.getElementById('u-perm-imprimir')?.checked,
+    pdf:role==='admin'||!!document.getElementById('u-perm-pdf')?.checked,
+  };
+  if(idx!==undefined){
+    DB.users[idx].nombre=nombre;
+    DB.users[idx].username=user;
+    DB.users[idx].role=role;
+    DB.users[idx].modulos=modulos;
+    DB.users[idx].permisos=permisos;
+    if(pass)DB.users[idx].password=pass;
+  } else {
+    DB.users.push({id:uid(),nombre,username:user,password:pass,role,modulos,permisos,activo:true});
+  }
   sDB('users');closeModal();toast('Usuario guardado ✓','success');renderUsuarios();
 }
 
