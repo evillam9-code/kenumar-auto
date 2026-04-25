@@ -6877,10 +6877,16 @@ async function fbCargar(){
               DB.config.logoData=logoVal;
             }
           } else if(key==='config' && typeof val==='object' && val!==null){
-            // Merge config: Firebase tiene prioridad pero no sobreescribir con vacíos
+            // Merge config: Firebase siempre tiene prioridad en campos de empresa
+            // Solo usar local como fallback si Firebase no tiene el valor
             const merged=Object.assign({},DB[key]);
             Object.keys(val).forEach(k=>{
-              if(val[k]!==null && val[k]!==undefined && val[k]!==''){
+              // Arrays especiales: fusionar (no sobreescribir)
+              if(Array.isArray(val[k])&&Array.isArray(merged[k])){
+                // Firebase tiene prioridad en arrays también
+                merged[k]=val[k];
+              } else if(val[k]!==null && val[k]!==undefined){
+                // Firebase sobreescribe siempre (incluso string vacío es válido para prefijo)
                 merged[k]=val[k];
               }
             });
@@ -6946,7 +6952,7 @@ function fbActivarListeners(){
         } else if(key==='config'&&typeof val==='object'&&val!==null){
           const merged=Object.assign({},DB.config);
           Object.keys(val).forEach(k=>{
-            if(val[k]!==null&&val[k]!==undefined&&val[k]!=='')merged[k]=val[k];
+            if(Array.isArray(val[k])&&Array.isArray(merged[k])){merged[k]=val[k];}else if(val[k]!==null&&val[k]!==undefined){merged[k]=val[k];}
           });
           DB.config=merged;
           // Actualizar topbar y sidebar
