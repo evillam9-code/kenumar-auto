@@ -730,6 +730,14 @@ function renderDashboard(){
   const cxpRD=cxpPend.filter(g=>(g.moneda||'RD$')==='RD$').reduce((a,g)=>a+parseFloat(g.montoPendiente||0),0);
   const cxpUSD=cxpPend.filter(g=>g.moneda==='USD').reduce((a,g)=>a+parseFloat(g.montoPendiente||0),0);
   const cxcMonto=cxcPend.reduce((a,x)=>a+parseFloat(x.saldo||0),0);
+  const cajaMes=filtro?DB.caja.filter(c=>dia?c.fecha===dia:c.fecha?.startsWith(mes)):DB.caja;
+  const cajaEntRD=cajaMes.filter(c=>c.tipo==='ENTRADA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaEntUSD=cajaMes.filter(c=>c.tipo==='ENTRADA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaSalRD=cajaMes.filter(c=>c.tipo==='SALIDA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaSalUSD=cajaMes.filter(c=>c.tipo==='SALIDA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaBalRD=cajaEntRD-cajaSalRD;
+  const cajaBalUSD=cajaEntUSD-cajaSalUSD;
+  const fmtUSD=n=>'USD '+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const periodo=dia?'Día: '+fmtDate(dia):mes?'Mes: '+mes:'Todos los registros';
   const ahora=new Date().toLocaleTimeString('es-DO',{hour:'2-digit',minute:'2-digit'});
 
@@ -800,6 +808,27 @@ function renderDashboard(){
         <div style="font-size:16px;font-weight:700;color:var(--navy)">${DB.suplidores.length} <span style="font-size:12px;font-weight:400;color:var(--gray)">suplidores</span></div>
       </div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="card" style="margin-bottom:0;border-top:4px solid var(--green)">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray);margin-bottom:8px">💳 Entradas de Caja</div>
+        <div style="font-size:18px;font-weight:800;color:var(--green)">${fmt(cajaEntRD)}</div>
+        <div style="font-size:11px;color:var(--gray)">RD$ en el período</div>
+        ${cajaEntUSD>0?`<div style="font-size:15px;font-weight:700;color:var(--blue);margin-top:4px">${fmtUSD(cajaEntUSD)}</div>`:''}
+      </div>
+      <div class="card" style="margin-bottom:0;border-top:4px solid var(--red)">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray);margin-bottom:8px">💳 Salidas de Caja</div>
+        <div style="font-size:18px;font-weight:800;color:var(--red)">${fmt(cajaSalRD)}</div>
+        <div style="font-size:11px;color:var(--gray)">RD$ en el período</div>
+        ${cajaSalUSD>0?`<div style="font-size:15px;font-weight:700;color:var(--red);margin-top:4px">${fmtUSD(cajaSalUSD)}</div>`:''}
+      </div>
+      <div class="card" style="margin-bottom:0;border-top:4px solid ${cajaBalRD>=0?'var(--blue)':'var(--red)'}">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray);margin-bottom:8px">💳 Balance de Caja</div>
+        <div style="font-size:18px;font-weight:800;color:${cajaBalRD>=0?'var(--blue)':'var(--red)'}">${fmt(cajaBalRD)}</div>
+        <div style="font-size:11px;color:var(--gray)">RD$ en el período</div>
+        ${cajaBalUSD!==0?`<div style="font-size:15px;font-weight:700;color:${cajaBalUSD>=0?'var(--blue)':'var(--red)'};margin-top:4px">${fmtUSD(cajaBalUSD)}</div>`:''}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
 
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
       <div class="card" style="margin-bottom:0;border-top:4px solid ${vendTransito.length>0?'var(--purple)':'var(--green)'}">
@@ -1233,53 +1262,157 @@ function imprimirGastosVehiculo(vid){
 
 
 // ══ CAJA ══
+function actualizarTasaCaja(){
+  const val=parseFloat(document.getElementById('caja-tasa-input')?.value||0);
+  if(val>0){DB.config.tasaCambio=val;sDB('config');renderCaja();toast('Tasa actualizada ✓','success');}
+  else toast('Ingrese una tasa válida','error');
+}
 function renderCaja(){
   const mes=document.getElementById('caja-mes')?.value||today().slice(0,7);
   const tab=document.getElementById('caja-tab')?.value||'TODO';
+  const vista=document.getElementById('caja-vista')?.value||'MES';
+  const tasa=parseFloat(DB.config.tasaCambio||60);
+  const fmtUSD=n=>'USD '+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const cajaFilt=DB.caja.filter(c=>c.fecha?.startsWith(mes));
+  const entradasRD=cajaFilt.filter(c=>c.tipo==='ENTRADA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const entradasUSD=cajaFilt.filter(c=>c.tipo==='ENTRADA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const salidasRD=cajaFilt.filter(c=>c.tipo==='SALIDA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const salidasUSD=cajaFilt.filter(c=>c.tipo==='SALIDA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const balRD=entradasRD-salidasRD;
+  const balUSD=entradasUSD-salidasUSD;
   const ventasMes=DB.ventas.filter(v=>v.fecha?.startsWith(mes)).reduce((a,v)=>a+parseFloat(v.precioVenta||0),0);
-  const nominaMes=DB.nomina.filter(e=>e.activo).reduce((a,e)=>a+parseFloat(e.salario||0),0);
-  const gastosVehMes=(DB.gastosVehiculos||[]).filter(g=>g.fecha?.startsWith(mes)).reduce((a,g)=>a+parseFloat(g.monto||0),0);
-  const gastosEmpMes=DB.gastos.filter(g=>g.fecha?.startsWith(mes)).reduce((a,g)=>a+parseFloat(g.monto||0),0);
-  const supPagMes=0; // Los pagos a suplidores ahora se gestionan en Gastos de Vehículo
-  const entradas=cajaFilt.filter(c=>c.tipo==='ENTRADA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
-  const salidas=cajaFilt.filter(c=>c.tipo==='SALIDA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cuentasAcum={};
+  DB.caja.forEach(c=>{
+    const banco=c.banco||'Sin banco';const cuenta=c.cuenta||'Sin cuenta';const moneda=c.moneda||'RD$';
+    const key=`${banco}||${cuenta}||${moneda}`;
+    if(!cuentasAcum[key])cuentasAcum[key]={banco,cuenta,moneda,entradas:0,salidas:0};
+    if(c.tipo==='ENTRADA')cuentasAcum[key].entradas+=parseFloat(c.monto||0);
+    else cuentasAcum[key].salidas+=parseFloat(c.monto||0);
+  });
+  const cuentasMes={};
+  cajaFilt.forEach(c=>{
+    const banco=c.banco||'Sin banco';const cuenta=c.cuenta||'Sin cuenta';const moneda=c.moneda||'RD$';
+    const key=`${banco}||${cuenta}||${moneda}`;
+    if(!cuentasMes[key])cuentasMes[key]={banco,cuenta,moneda,entradas:0,salidas:0};
+    if(c.tipo==='ENTRADA')cuentasMes[key].entradas+=parseFloat(c.monto||0);
+    else cuentasMes[key].salidas+=parseFloat(c.monto||0);
+  });
+  const cuentasData=vista==='ACUMULADO'?cuentasAcum:cuentasMes;
+  const bancoGroups={};
+  Object.values(cuentasData).forEach(c=>{if(!bancoGroups[c.banco])bancoGroups[c.banco]=[];bancoGroups[c.banco].push(c);});
+  const totalAcumRD=Object.values(cuentasAcum).filter(c=>c.moneda==='RD$').reduce((a,c)=>a+(c.entradas-c.salidas),0);
+  const totalAcumUSD=Object.values(cuentasAcum).filter(c=>c.moneda==='USD').reduce((a,c)=>a+(c.entradas-c.salidas),0);
+  const acumEntRD=Object.values(cuentasAcum).filter(c=>c.moneda==='RD$').reduce((a,c)=>a+c.entradas,0);
+  const acumSalRD=Object.values(cuentasAcum).filter(c=>c.moneda==='RD$').reduce((a,c)=>a+c.salidas,0);
+  const acumEntUSD=Object.values(cuentasAcum).filter(c=>c.moneda==='USD').reduce((a,c)=>a+c.entradas,0);
+  const acumSalUSD=Object.values(cuentasAcum).filter(c=>c.moneda==='USD').reduce((a,c)=>a+c.salidas,0);
+  const totalGeneralRD=totalAcumRD+(totalAcumUSD*tasa);
+  const bancoCards=Object.entries(bancoGroups).map(([banco,cuentas])=>{
+    const cuentasHTML=cuentas.map(c=>{
+      const saldo=c.entradas-c.salidas;const isUSD=c.moneda==='USD';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#fff;border-radius:8px;border:1px solid var(--gray3);margin-bottom:6px">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--navy)">${escHtml(c.cuenta)}</div>
+          <div style="font-size:11px;color:var(--gray);margin-top:2px">${isUSD?'🇺🇸 Dólares':'🇩🇴 Pesos'} · Ent: ${isUSD?fmtUSD(c.entradas):fmt(c.entradas)} · Sal: ${isUSD?fmtUSD(c.salidas):fmt(c.salidas)}</div>
+          ${isUSD?`<div style="font-size:11px;color:var(--gray);margin-top:1px">≈ ${fmt(saldo*tasa)} al cambio</div>`:''}
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:18px;font-weight:900;color:${saldo>=0?'var(--green)':'var(--red)'}">${isUSD?fmtUSD(saldo):fmt(saldo)}</div>
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;color:var(--gray)">Saldo ${vista==='ACUMULADO'?'acumulado':'del mes'}</div>
+        </div>
+      </div>`;
+    }).join('');
+    const totRD=cuentas.filter(c=>c.moneda==='RD$').reduce((a,c)=>a+(c.entradas-c.salidas),0);
+    const totUSD=cuentas.filter(c=>c.moneda==='USD').reduce((a,c)=>a+(c.entradas-c.salidas),0);
+    return `<div class="card" style="border-top:3px solid var(--blue);margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title" style="margin:0;padding:0;border:none">🏦 ${escHtml(banco)}</div>
+        <div style="text-align:right;font-size:12px">
+          ${totRD!==0?`<span style="font-weight:700;color:${totRD>=0?'var(--green)':'var(--red)'}">${fmt(totRD)}</span>`:''}
+          ${totUSD!==0?`<span style="font-weight:700;color:${totUSD>=0?'var(--blue)':'var(--red)'};margin-left:8px">${fmtUSD(totUSD)}</span>`:''}
+        </div>
+      </div>
+      ${cuentasHTML}
+    </div>`;
+  }).join('');
   let filtrados=tab==='ENTRADAS'?cajaFilt.filter(c=>c.tipo==='ENTRADA'):tab==='SALIDAS'?cajaFilt.filter(c=>c.tipo==='SALIDA'):cajaFilt;
 
   document.getElementById('page-caja').innerHTML=`
     <div class="page-header">
-      <div><h1>💳 Caja</h1><p>Balance: ${fmt(entradas-salidas)}</p></div>
+      <div><h1>💳 Caja</h1><p>Saldo acumulado de todas las cuentas</p></div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="month" id="caja-mes" value="${mes}" onchange="renderCaja()" style="padding:7px 12px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
         <button class="btn btn-green btn-sm" onclick="nuevoCajaMov('ENTRADA')">📥 Nueva Entrada</button>
         <button class="btn btn-red btn-sm" onclick="nuevoCajaMov('SALIDA')">📤 Nueva Salida</button>
       </div>
     </div>
-    <div class="two-col" style="margin-bottom:16px">
-      <div class="card" style="border-top:3px solid var(--green)">
-        <div class="card-title" style="color:var(--green)">📥 ENTRADAS</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--green2);border-radius:6px"><span style="font-size:13px;font-weight:600">💰 Ventas de Vehículos</span><span style="font-weight:800;color:var(--green)">${fmt(ventasMes)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--gray2);border-radius:6px"><span style="font-size:13px;font-weight:600">📥 Otras Entradas</span><span style="font-weight:700">${fmt(Math.max(0,entradas-ventasMes))}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--navy);border-radius:6px"><span style="font-size:13px;font-weight:700;color:#fff">TOTAL ENTRADAS</span><span style="font-weight:800;color:#4ade80">${fmt(entradas)}</span></div>
+    <!-- TOTALES ACUMULADOS -->
+    <div class="card" style="background:var(--navy);margin-bottom:14px;padding:20px 24px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:14px;letter-spacing:.8px">💰 TOTAL ACUMULADO — TODAS LAS CUENTAS</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;text-align:center">
+        <div style="background:rgba(74,222,128,.1);border-radius:10px;padding:12px 6px">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#4ade80;margin-bottom:6px">Entradas RD$</div>
+          <div style="font-size:15px;font-weight:900;color:#4ade80">${fmt(acumEntRD)}</div>
+        </div>
+        <div style="background:rgba(248,113,113,.1);border-radius:10px;padding:12px 6px">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#f87171;margin-bottom:6px">Salidas RD$</div>
+          <div style="font-size:15px;font-weight:900;color:#f87171">${fmt(acumSalRD)}</div>
+        </div>
+        <div style="background:rgba(${totalAcumRD>=0?'74,222,128':'248,113,113'},.15);border-radius:10px;padding:12px 6px;border:1px solid rgba(${totalAcumRD>=0?'74,222,128':'248,113,113'},.3)">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:${totalAcumRD>=0?'#4ade80':'#f87171'};margin-bottom:6px">Saldo RD$</div>
+          <div style="font-size:19px;font-weight:900;color:${totalAcumRD>=0?'#4ade80':'#f87171'}">${fmt(totalAcumRD)}</div>
+        </div>
+        <div style="background:rgba(96,165,250,.1);border-radius:10px;padding:12px 6px">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#60a5fa;margin-bottom:6px">Entradas USD</div>
+          <div style="font-size:15px;font-weight:900;color:#60a5fa">${fmtUSD(acumEntUSD)}</div>
+        </div>
+        <div style="background:rgba(248,113,113,.1);border-radius:10px;padding:12px 6px">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#f87171;margin-bottom:6px">Salidas USD</div>
+          <div style="font-size:15px;font-weight:900;color:#f87171">${fmtUSD(acumSalUSD)}</div>
+        </div>
+        <div style="background:rgba(${totalAcumUSD>=0?'96,165,250':'248,113,113'},.15);border-radius:10px;padding:12px 6px;border:1px solid rgba(${totalAcumUSD>=0?'96,165,250':'248,113,113'},.3)">
+          <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:${totalAcumUSD>=0?'#60a5fa':'#f87171'};margin-bottom:6px">Saldo USD</div>
+          <div style="font-size:19px;font-weight:900;color:${totalAcumUSD>=0?'#60a5fa':'#f87171'}">${fmtUSD(totalAcumUSD)}</div>
         </div>
       </div>
-      <div class="card" style="border-top:3px solid var(--red)">
-        <div class="card-title" style="color:var(--red)">📤 SALIDAS</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red2);border-radius:6px"><span style="font-size:13px;font-weight:600">👷 Nómina</span><span style="font-weight:700;color:var(--red)">${fmt(nominaMes)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red2);border-radius:6px"><span style="font-size:13px;font-weight:600">🚗 Gastos de Vehículos</span><span style="font-weight:700;color:var(--red)">${fmt(gastosVehMes)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red2);border-radius:6px"><span style="font-size:13px;font-weight:600">🏢 Gastos de Empresa</span><span style="font-weight:700;color:var(--red)">${fmt(gastosEmpMes)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--red2);border-radius:6px"><span style="font-size:13px;font-weight:600">🏭 Pago a Suplidores</span><span style="font-weight:700;color:var(--red)">${fmt(supPagMes)}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--navy);border-radius:6px"><span style="font-size:13px;font-weight:700;color:#fff">TOTAL SALIDAS</span><span style="font-weight:800;color:#f87171">${fmt(salidas)}</span></div>
-        </div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:center;align-items:center;gap:8px">
+        <span style="font-size:11px;color:#94a3b8">Total general en RD$:</span>
+        <span style="font-size:20px;font-weight:900;color:${totalGeneralRD>=0?'#4ade80':'#f87171'}">${fmt(totalGeneralRD)}</span>
+        <span style="font-size:11px;color:#94a3b8">(RD$ + USD × ${tasa.toLocaleString('es-DO',{minimumFractionDigits:2})})</span>
       </div>
     </div>
+    <!-- Tasa editable -->
+    <div style="background:var(--amber2);border:1px solid var(--amber);border-radius:8px;padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="font-size:13px">💱 <strong>Tasa USD:</strong></span>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:13px;color:var(--gray)">1 USD =</span>
+        <input type="number" id="caja-tasa-input" value="${tasa}" step="0.01" min="1"
+          style="width:90px;padding:5px 8px;border:1.5px solid var(--amber);border-radius:6px;font-size:13px;font-weight:700;font-family:'Outfit',sans-serif">
+        <span style="font-size:13px;color:var(--gray)">RD$</span>
+        <button class="btn btn-amber btn-sm" onclick="actualizarTasaCaja()">✓ Aplicar</button>
+      </div>
+    </div>
+    <!-- Selector vista por cuentas -->
+    <div class="card" style="margin-bottom:14px;padding:14px 16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="font-size:14px;font-weight:700">🏦 Saldo por Cuentas Bancarias</div>
+        <select id="caja-vista" onchange="renderCaja()" style="padding:6px 12px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
+          <option value="MES" ${vista==='MES'?'selected':''}>Movimientos del mes</option>
+          <option value="ACUMULADO" ${vista==='ACUMULADO'?'selected':''}>Saldo acumulado total</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--gray);margin-top:6px">${vista==='ACUMULADO'?'Saldo acumulado histórico por cuenta.':'Movimientos del mes seleccionado por cuenta.'}</div>
+    </div>
+    <!-- Tarjetas por banco -->
+    ${Object.keys(bancoGroups).length>0?bancoCards:'<div class="card" style="text-align:center;padding:24px;color:var(--gray)">Sin movimientos en este período</div>'}
+    <!-- Resumen del mes -->
     <div class="card" style="background:var(--navy);margin-bottom:16px">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;text-align:center">
-        <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Entradas</div><div style="font-size:22px;font-weight:800;color:#4ade80">${fmt(entradas)}</div></div>
-        <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Salidas</div><div style="font-size:22px;font-weight:800;color:#f87171">${fmt(salidas)}</div></div>
-        <div><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Balance Neto</div><div style="font-size:22px;font-weight:800;color:${entradas-salidas>=0?'#4ade80':'#f87171'}">${fmt(entradas-salidas)}</div></div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:10px;text-align:center">📅 Resumen del mes seleccionado</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;text-align:center">
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Entradas RD$</div><div style="font-size:18px;font-weight:800;color:#4ade80">${fmt(entradasRD)}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Salidas RD$</div><div style="font-size:18px;font-weight:800;color:#f87171">${fmt(salidasRD)}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Balance RD$</div><div style="font-size:18px;font-weight:800;color:${balRD>=0?'#4ade80':'#f87171'}">${fmt(balRD)}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:4px">Balance USD</div><div style="font-size:18px;font-weight:800;color:${balUSD>=0?'#4ade80':'#f87171'}">${fmtUSD(balUSD)}</div></div>
       </div>
     </div>
     <div class="card">
@@ -1799,8 +1932,23 @@ function renderInformes(){
   const mes=document.getElementById('inf-mes')?.value||today().slice(0,7);
   const ventasMes=DB.ventas.filter(v=>v.fecha?.startsWith(mes));
   const gastosMes=DB.gastos.filter(g=>g.fecha?.startsWith(mes));
-  const cajaE=DB.caja.filter(c=>c.fecha?.startsWith(mes)&&c.tipo==='ENTRADA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
-  const cajaS=DB.caja.filter(c=>c.fecha?.startsWith(mes)&&c.tipo==='SALIDA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaFiltInf=DB.caja.filter(c=>c.fecha?.startsWith(mes));
+  const cajaE=cajaFiltInf.filter(c=>c.tipo==='ENTRADA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaS=cajaFiltInf.filter(c=>c.tipo==='SALIDA').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaERD=cajaFiltInf.filter(c=>c.tipo==='ENTRADA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaEUSD=cajaFiltInf.filter(c=>c.tipo==='ENTRADA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaSRD=cajaFiltInf.filter(c=>c.tipo==='SALIDA'&&(c.moneda||'RD$')==='RD$').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const cajaSUSD=cajaFiltInf.filter(c=>c.tipo==='SALIDA'&&c.moneda==='USD').reduce((a,c)=>a+parseFloat(c.monto||0),0);
+  const tasa=parseFloat(DB.config.tasaCambio||60);
+  const fmtUSD=n=>'USD '+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const infCuentas={};
+  cajaFiltInf.forEach(c=>{
+    const key=(c.banco&&c.cuenta)?`${c.banco} / ${c.cuenta}`:(c.banco||'Sin cuenta');
+    const mon=c.moneda||'RD$';
+    if(!infCuentas[key])infCuentas[key]={entRD:0,salRD:0,entUSD:0,salUSD:0};
+    if(c.tipo==='ENTRADA'){if(mon==='USD')infCuentas[key].entUSD+=parseFloat(c.monto||0);else infCuentas[key].entRD+=parseFloat(c.monto||0);}
+    else{if(mon==='USD')infCuentas[key].salUSD+=parseFloat(c.monto||0);else infCuentas[key].salRD+=parseFloat(c.monto||0);}
+  });
   const totalV=ventasMes.reduce((a,v)=>a+parseFloat(v.precioVenta||0),0);
   const totalG=ventasMes.reduce((a,v)=>a+parseFloat(v.ganancia||0),0);
   const totalGastos=gastosMes.reduce((a,g)=>a+parseFloat(g.monto||0),0);
@@ -1835,11 +1983,23 @@ function renderInformes(){
     </div>
     <div class="two-col">
       <div class="card"><div class="card-title">💳 Flujo de Caja</div>
-        <table><thead><tr><th>Concepto</th><th>Monto</th></tr></thead><tbody>
-          <tr><td>Total Entradas</td><td style="font-weight:700;color:var(--green)">${fmt(cajaE)}</td></tr>
-          <tr><td>Total Salidas</td><td style="font-weight:700;color:var(--red)">${fmt(cajaS)}</td></tr>
-          <tr style="background:var(--blue3)"><td style="font-weight:700">BALANCE NETO</td><td style="font-weight:800;color:var(--blue)">${fmt(cajaE-cajaS)}</td></tr>
+        <table><thead><tr><th>Concepto</th><th>RD$</th><th>USD</th></tr></thead><tbody>
+          <tr><td>Total Entradas</td><td style="font-weight:700;color:var(--green)">${fmt(cajaERD)}</td><td style="font-weight:700;color:var(--blue)">${cajaEUSD>0?fmtUSD(cajaEUSD):'—'}</td></tr>
+          <tr><td>Total Salidas</td><td style="font-weight:700;color:var(--red)">${fmt(cajaSRD)}</td><td style="font-weight:700;color:var(--red)">${cajaSUSD>0?fmtUSD(cajaSUSD):'—'}</td></tr>
+          <tr style="background:var(--blue3)"><td style="font-weight:700">Balance Neto</td><td style="font-weight:800;color:${cajaERD-cajaSRD>=0?'var(--blue)':'var(--red)'}">${fmt(cajaERD-cajaSRD)}</td><td style="font-weight:800;color:${cajaEUSD-cajaSUSD>=0?'var(--blue)':'var(--red)'}">${cajaEUSD-cajaSUSD!==0?fmtUSD(cajaEUSD-cajaSUSD):'—'}</td></tr>
         </tbody></table>
+        ${Object.keys(infCuentas).length>0?`
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray);margin:12px 0 6px">Por cuenta bancaria</div>
+        <table><thead><tr><th>Cuenta</th><th>Ent. RD$</th><th>Sal. RD$</th><th>Bal. RD$</th><th>Ent. USD</th><th>Sal. USD</th></tr></thead><tbody>
+          ${Object.entries(infCuentas).map(([nombre,v])=>`<tr>
+            <td style="font-size:11px;font-weight:600">${escHtml(nombre)}</td>
+            <td style="color:var(--green);font-size:12px">${v.entRD>0?fmt(v.entRD):'—'}</td>
+            <td style="color:var(--red);font-size:12px">${v.salRD>0?fmt(v.salRD):'—'}</td>
+            <td style="font-weight:700;color:${v.entRD-v.salRD>=0?'var(--green)':'var(--red)'};font-size:12px">${fmt(v.entRD-v.salRD)}</td>
+            <td style="color:var(--blue);font-size:12px">${v.entUSD>0?fmtUSD(v.entUSD):'—'}</td>
+            <td style="color:var(--red);font-size:12px">${v.salUSD>0?fmtUSD(v.salUSD):'—'}</td>
+          </tr>`).join('')}
+        </tbody></table>`:''}
       </div>
       <div class="card"><div class="card-title">👷 Nómina Mensual</div>
         <table><thead><tr><th>Empleado</th><th>Cargo</th><th>Salario</th></tr></thead><tbody>
@@ -2314,6 +2474,7 @@ function renderConfig(){
         <div class="form-field"><label>Prefijo Código de Vehículo</label><input type="text" id="cf-prefijo" value="${escHtml(c.prefijoCodigo||'')}" placeholder="Se toma del nombre del negocio" maxlength="5"><div style="font-size:11px;color:var(--gray);margin-top:4px">Ej: F → F-001 | Vacío = primera letra del negocio</div></div>
         <div class="form-field"><label>Tasa de Cambio (RD$ por 1 USD)</label><input type="number" id="cf-tasa" value="${c.tasaCambio||60}" step="0.01"></div>
       </div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarInfoNegocio()">💾 Guardar</button></div>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title">👥 Propietarios de Vehículos</div>
@@ -2321,6 +2482,7 @@ function renderConfig(){
         ${(c.propietarios||[]).map((p,i)=>`<div style="display:flex;gap:6px"><input type="text" value="${escHtml(p)}" id="cf-prop-${i}" style="flex:1"><button class="btn btn-red btn-sm" onclick="this.parentElement.remove()">🗑</button></div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarPropConfig()">➕ Agregar Propietario</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarPropietarios()">💾 Guardar</button></div>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-title">💳 Cuentas de la Empresa <span style="font-size:11px;font-weight:400;color:var(--gray)">(Para cotizaciones)</span></div>
@@ -2328,6 +2490,7 @@ function renderConfig(){
         ${(c.cuentas||['Caja General']).map((ct,i)=>`<div style="display:flex;gap:6px"><input type="text" value="${escHtml(ct)}" id="cf-cuenta-${i}" style="flex:1"><button class="btn btn-red btn-sm" onclick="this.parentElement.remove()">🗑</button></div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarCuentaConfig()">➕ Agregar Cuenta</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarCuentasEmpresa()">💾 Guardar</button></div>
     </div>
     <!-- COLORES DEL SISTEMA -->
     <div class="card">
@@ -2407,6 +2570,7 @@ function renderConfig(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="previsualizarColores()">👁️ Previsualizar</button>
         <button class="btn btn-secondary" onclick="resetColores()">🔄 Restablecer Todo</button>
+        <button class="btn btn-green" onclick="guardarColores()">💾 Guardar Colores</button>
       </div>
     </div>
     <!-- COMPAÑÍAS DE SEGUROS -->
@@ -2421,15 +2585,11 @@ function renderConfig(){
           </div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarSeguroConfig()">➕ Agregar Compañía</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarSegurosConfig()">💾 Guardar</button></div>
     </div>
 
-    <div class="btn-row" style="margin-top:16px">
-      <button class="btn btn-primary" id="btn-guardar-config" onclick="guardarConfig()">💾 Guardar Configuración</button>
-      ${currentUser?.role==='admin'?`
-      <div style="margin-left:auto">
-        <button class="btn btn-secondary" onclick="confirmarResetDatos()" style="color:var(--red);border:1.5px solid var(--red)">🗑 Limpiar Todos los Datos</button>
-      </div>`:''}
-    </div>
+    ${currentUser?.role==='admin'?`<div class="btn-row" style="margin-top:8px;justify-content:flex-end"><button class="btn btn-secondary" onclick="confirmarResetDatos()" style="color:var(--red);border:1.5px solid var(--red)">🗑 Limpiar Todos los Datos</button></div>`:''}
+
 
     <!-- ROLES DE USUARIOS -->
     <div class="card">
@@ -2444,6 +2604,7 @@ function renderConfig(){
           </div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarRolConfig()">➕ Agregar Rol</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarRoles()">💾 Guardar</button></div>
     </div>
 
     <!-- TIPOS DE GASTO DE VEHÍCULO -->
@@ -2458,6 +2619,7 @@ function renderConfig(){
           </div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarTipoGastoVehConfig()">➕ Agregar Tipo</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarTiposGastoVeh()">💾 Guardar</button></div>
     </div>
 
     <!-- CATEGORÍAS DE GASTOS DE EMPRESA -->
@@ -2472,6 +2634,7 @@ function renderConfig(){
           </div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarCatGastoConfig()">➕ Agregar Categoría</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarCategoriasGastos()">💾 Guardar</button></div>
     </div>
 
     <!-- BANCOS Y CUENTAS -->
@@ -2491,11 +2654,10 @@ function renderConfig(){
                 <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px" class="bc-cuenta-row">
                   <input type="text" placeholder="Número de cuenta" value="${escHtml(c.numero||'')}" class="bc-cnum">
                   <select class="bc-ctipo">
-                    <option value="RD$ — Pesos" ${(c.tipo||'RD$ — Pesos')==='RD$ — Pesos'?'selected':''}>RD$ — Pesos</option>
-                    <option value="USD — Dólares" ${c.tipo==='USD — Dólares'?'selected':''}>USD — Dólares</option>
-                    <option value="Cuenta de Ahorro" ${c.tipo==='Cuenta de Ahorro'?'selected':''}>Cuenta de Ahorro</option>
-                    <option value="Corriente RD$" ${c.tipo==='Corriente RD$'?'selected':''}>Corriente RD$</option>
+                    <option value="Corriente RD$" ${(c.tipo||'Corriente RD$')==='Corriente RD$'?'selected':''}>Corriente RD$</option>
                     <option value="Corriente USD" ${c.tipo==='Corriente USD'?'selected':''}>Corriente USD</option>
+                    <option value="Ahorro RD$" ${c.tipo==='Ahorro RD$'?'selected':''}>Ahorro RD$</option>
+                    <option value="Ahorro USD" ${c.tipo==='Ahorro USD'?'selected':''}>Ahorro USD</option>
                   </select>
                   <button class="btn btn-red btn-sm" onclick="this.closest('.bc-cuenta-row').remove()">✕</button>
                 </div>`).join('')}
@@ -2504,6 +2666,7 @@ function renderConfig(){
           </div>`).join('')}
       </div>
       <button class="btn btn-secondary btn-sm" onclick="agregarBancoConfig()">🏦 Agregar Banco</button>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarBancoCuentas()">💾 Guardar</button></div>
     </div>
 
     <!-- RESPONSABLE Y OBSERVACIÓN RECIBO -->
@@ -2517,6 +2680,7 @@ function renderConfig(){
           <input type="text" id="cf-obs-recibo" value="${escHtml(c.observacionRecibo||'')}" placeholder="Ej: Gracias por su compra. Vehículo vendido en las condiciones actuales.">
         </div>
       </div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn btn-primary" onclick="guardarDatosRecibo()">💾 Guardar</button></div>
     </div>
 
     </div>
@@ -2605,11 +2769,10 @@ function agregarCuentaBanco(bi){
   div.style.cssText='display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px';
   div.innerHTML=`<input type="text" placeholder="Número de cuenta" class="bc-cnum">
     <select class="bc-ctipo">
-      <option value="RD$ — Pesos">RD$ — Pesos</option>
-      <option value="USD — Dólares">USD — Dólares</option>
-      <option value="Cuenta de Ahorro">Cuenta de Ahorro</option>
       <option value="Corriente RD$">Corriente RD$</option>
       <option value="Corriente USD">Corriente USD</option>
+      <option value="Ahorro RD$">Ahorro RD$</option>
+      <option value="Ahorro USD">Ahorro USD</option>
     </select>
     <button class="btn btn-red btn-sm" onclick="this.closest('.bc-cuenta-row').remove()">✕</button>`;
   cont.appendChild(div);
@@ -2633,6 +2796,105 @@ function cargarLogoConfig(input){
     toast('Logo cargado ✓','success');
   };
   reader.readAsDataURL(file);
+}
+
+// ══ GUARDAR POR SECCIÓN ══
+function guardarInfoNegocio(){
+  const c=DB.config;
+  c.empresa=document.getElementById('cf-empresa')?.value.trim()||c.empresa||'';
+  c.telefono=document.getElementById('cf-tel')?.value||'';
+  c.correo=document.getElementById('cf-correo')?.value||'';
+  c.direccion=document.getElementById('cf-dir')?.value||'';
+  c.moneda=document.getElementById('cf-moneda')?.value||'RD$';
+  c.rnc=document.getElementById('cf-rnc')?.value||'';
+  c.prefijoCodigo=document.getElementById('cf-prefijo')?.value.trim()||'';
+  c.tasaCambio=parseFloat(document.getElementById('cf-tasa')?.value||60);
+  sDB('config');
+  const emp=document.getElementById('topbar-empresa');
+  if(emp&&c.empresa)emp.textContent=c.empresa;
+  actualizarLogoSidebar();
+  toast('✅ Información del negocio guardada','success');
+}
+function guardarPropietarios(){
+  const props=[];
+  document.querySelectorAll('[id^="cf-prop-"]').forEach(inp=>{const v=inp.value.trim();if(v)props.push(v);});
+  DB.config.propietarios=props;
+  sDB('config');
+  toast('✅ Propietarios guardados','success');
+}
+function guardarCuentasEmpresa(){
+  const cuentas=[];
+  document.querySelectorAll('[id^="cf-cuenta-"]').forEach(inp=>{const v=inp.value.trim();if(v)cuentas.push(v);});
+  DB.config.cuentas=cuentas.length?cuentas:['Caja General'];
+  sDB('config');
+  toast('✅ Cuentas guardadas','success');
+}
+function guardarColores(){
+  const ids=['blue','navy','navy2','sidebarBg','sidebarText','sidebarActive','sidebarActiveText','sidebarHover','mainBg','green','red','amber','loginBg1','loginBg2','loginAccent','welcomeBg1','welcomeBg2','welcomeText'];
+  const colores={};
+  ids.forEach(id=>{const hexEl=document.getElementById('cf-color-'+id+'-hex');const colEl=document.getElementById('cf-color-'+id);const val=(hexEl?.value||colEl?.value||'').trim();if(val)colores[id]=val;});
+  DB.config.colores=colores;
+  aplicarColoresSistema();
+  sDB('config');
+  toast('✅ Colores guardados','success');
+}
+function guardarSegurosConfig(){
+  const compSeg=[];
+  document.querySelectorAll('[id^="cf-seguro-"]').forEach(inp=>{const v=inp.value.trim();if(v)compSeg.push(v);});
+  DB.config.companiasSeguro=compSeg.length?compSeg:['Universal','Mapfre BHD','Reservas','Otra'];
+  sDB('config');
+  toast('✅ Compañías de seguros guardadas','success');
+}
+function guardarRoles(){
+  const roles=[];
+  document.querySelectorAll('[id^="cf-rol-nombre-"]').forEach(inp=>{
+    const v=inp.value.trim();
+    const i=inp.id.replace('cf-rol-nombre-','');
+    const rid=document.getElementById('cf-rol-id-'+i)?.value||'rol_'+Date.now()+'_'+i;
+    if(v)roles.push({id:rid,nombre:v});
+  });
+  DB.config.roles=roles.length?roles:[{id:'usuario',nombre:'Usuario'}];
+  sDB('config');
+  toast('✅ Roles guardados','success');
+}
+function guardarTiposGastoVeh(){
+  const tgv=[];
+  document.querySelectorAll('[id^="cf-tgv-"]').forEach(inp=>{const v=inp.value.trim();if(v)tgv.push(v);});
+  DB.config.tiposGastoVeh=tgv.length?tgv:['Compra Vehículo','Aduana','Flete','Otros'];
+  sDB('config');
+  toast('✅ Tipos de gasto guardados','success');
+}
+function guardarCategoriasGastos(){
+  const catg=[];
+  document.querySelectorAll('[id^="cf-catg-"]').forEach(inp=>{const v=inp.value.trim();if(v)catg.push(v);});
+  DB.config.categoriasGastos=catg.length?catg:['Alquiler','Servicios','Otros'];
+  sDB('config');
+  toast('✅ Categorías guardadas','success');
+}
+function guardarBancoCuentas(){
+  const bancoCuentas=[];
+  document.querySelectorAll('.bc-banco-block').forEach(block=>{
+    const nombreInp=block.querySelector('[id^="bcb-nombre-"]');
+    const banco=nombreInp?nombreInp.value.trim():'';
+    if(!banco)return;
+    const cuentas=[];
+    block.querySelectorAll('.bc-cuenta-row').forEach(row=>{
+      const num=row.querySelector('.bc-cnum')?.value.trim()||'';
+      const tipo=row.querySelector('.bc-ctipo')?.value||'Corriente RD$';
+      if(num)cuentas.push({numero:num,tipo,banco});
+    });
+    bancoCuentas.push({banco,cuentas});
+  });
+  DB.config.bancoCuentas=bancoCuentas;
+  DB.config.bancos=bancoCuentas.map(b=>b.banco);
+  sDB('config');
+  toast('✅ Bancos y cuentas guardados','success');
+}
+function guardarDatosRecibo(){
+  DB.config.responsable=document.getElementById('cf-responsable')?.value.trim()||'';
+  DB.config.observacionRecibo=document.getElementById('cf-obs-recibo')?.value.trim()||'';
+  sDB('config');
+  toast('✅ Datos del recibo guardados','success');
 }
 function guardarConfig(){
   DB.config.empresa=document.getElementById('cf-empresa').value.trim();
@@ -2670,7 +2932,7 @@ function guardarConfig(){
     const cuentas=[];
     block.querySelectorAll('.bc-cuenta-row').forEach(row=>{
       const num=row.querySelector('.bc-cnum')?.value.trim()||'';
-      const tipo=row.querySelector('.bc-ctipo')?.value||'RD$ — Pesos';
+      const tipo=row.querySelector('.bc-ctipo')?.value||'Corriente RD$';
       if(num)cuentas.push({numero:num,tipo});
     });
     bancoCuentas.push({banco,cuentas});
@@ -2691,11 +2953,7 @@ function guardarConfig(){
   const emp=document.getElementById('topbar-empresa');
   if(emp&&DB.config.empresa)emp.textContent=DB.config.empresa;
   actualizarLogoSidebar();
-  // Toast prominente
   toast('✅ Configuración guardada correctamente','success');
-  // Botón feedback visual
-  const btnG=document.getElementById('btn-guardar-config');
-  if(btnG){const orig=btnG.innerHTML;btnG.innerHTML='✅ Guardado';btnG.style.background='var(--green)';setTimeout(()=>{btnG.innerHTML=orig;btnG.style.background='';},2500);}
   if(typeof fbGuardar==='function'&&window._fbActivo){
     fbGuardar('config').catch(e=>console.warn('FB config save:',e));
   }
