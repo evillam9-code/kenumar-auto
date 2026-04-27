@@ -737,7 +737,7 @@ function renderDashboard(){
     <div class="page-header">
       <div>
         <h1>🏠 Inicio</h1>
-        <p>${escHtml(DB.config.empresa||'MAEDIG')} — ${periodo} <span style="color:var(--green);font-size:11px;margin-left:8px">● Actualizado ${ahora}</span></p>
+        <p>${escHtml(DB.config.empresa||'')} — ${periodo} <span style="color:var(--green);font-size:11px;margin-left:8px">● Actualizado ${ahora}</span></p>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <input type="month" id="dash-mes" style="padding:7px 12px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px" onchange="document.getElementById('dash-dia').value='';renderDashboard()" value="${mes}">
@@ -2242,7 +2242,7 @@ function exportarAlertasPDF(){
   const win=window.open('','_blank','width=800,height=600');
   win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alertas</title><style>body{font-family:Arial,sans-serif;padding:24px;font-size:12px}h2{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#0f172a;color:#fff;padding:8px;font-size:11px;text-align:left}td{padding:8px;border-bottom:1px solid #e2e8f0}@media print{button{display:none}}</style></head><body>
   ${DB.config.logoData?`<img src="${DB.config.logoData}" style="max-height:50px;margin-bottom:8px;display:block">`:''}
-  <h2>${escHtml(DB.config.empresa||'MAEDIG')} — REPORTE DE ALERTAS</h2>
+  <h2>${escHtml(DB.config.empresa||'')} — REPORTE DE ALERTAS</h2>
   <div style="color:#6b7280;font-size:11px;margin-bottom:16px">Fecha: ${fmtDate(hoy)} | Total: ${alertas.length} alertas</div>
   <table><thead><tr><th>Nivel</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>
   ${alertas.map(a=>`<tr><td>${a.nivel}</td><td style="font-weight:700">${escHtml(a.titulo)}</td><td>${escHtml(a.msg)}</td></tr>`).join('')}
@@ -3207,7 +3207,7 @@ function exportarGastosVehPDF(){
 }
 
 function _generarPDFGastosVeh(gastos,tasa,filtroSup,filtroVeh,soloUnVeh){
-  const empresa=DB.config.empresa||'MAEDIG';
+  const empresa=DB.config.empresa||'';
   const logo=DB.config.logoData||'';
   const rnc=DB.config.rnc||'';
   const tel=DB.config.telefono||'';
