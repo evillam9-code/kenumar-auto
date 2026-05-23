@@ -4105,9 +4105,9 @@ function _iniciarPresenciaGlobal(){
         if(!DB.presencia)DB.presencia={};
         DB.presencia[e.data.uid]=e.data.ts;
         const pUsuarios=document.getElementById('page-usuarios');
-        if(pUsuarios&&pUsuarios.classList.contains('active')){
-          clearTimeout(window._presenciaRefreshTimer);
-          window._presenciaRefreshTimer=setTimeout(renderUsuarios,500);
+        if(pUsuarios&&pUsuarios.classList.contains("active")){
+          const formActivo=["nu-nombre","nu-user","nu-pass"].some(id=>{const el=document.getElementById(id);return el&&el.value.trim()!=="";});
+          if(!formActivo){clearTimeout(window._presenciaRefreshTimer);window._presenciaRefreshTimer=setTimeout(renderUsuarios,500);}
         }
       }
     };
@@ -10079,23 +10079,27 @@ function fbActivarListeners(){
         const activePage=document.querySelector('.page.active');
         if(!activePage)return;
         const pid=activePage.id.replace('page-','');
+        // Helper: no re-renderizar si hay modal abierto o formulario activo
+        const _modalAbierto=()=>document.getElementById('modal-overlay')?.classList.contains('open');
+        const _formUsuarioActivo=()=>['nu-nombre','nu-user','nu-pass'].some(id=>{const el=document.getElementById(id);return el&&el.value.trim()!=='';});
+        const _safeRender=(fn)=>()=>{if(!_modalAbierto())fn();};
         const renderMap={
-          dashboard:()=>typeof renderDashboard==='function'&&renderDashboard(),
-          inventario:()=>typeof renderInventario==='function'&&renderInventario(),
-          ventas:()=>typeof renderVentas==='function'&&renderVentas(),
-          clientes:()=>typeof renderClientes==='function'&&renderClientes(),
-          suplidores:()=>typeof renderSuplidores==='function'&&renderSuplidores(),
-          gastos:()=>typeof renderGastos==='function'&&renderGastos(),
-          nomina:()=>typeof renderNomina==='function'&&renderNomina(),
-          cxc:()=>typeof renderCXC==='function'&&renderCXC(),
-          cxp:()=>typeof renderCXP==='function'&&renderCXP(),
-          caja:()=>typeof renderCaja==='function'&&renderCaja(),
-          gastosVeh:()=>typeof renderGastosVeh==='function'&&renderGastosVeh(),
-          cotizaciones:()=>typeof renderCotizaciones==='function'&&renderCotizaciones(),
-          autorizaciones:()=>typeof renderAutorizaciones==='function'&&renderAutorizaciones(),
-          usuarios:()=>typeof renderUsuarios==='function'&&renderUsuarios(),
-          config:()=>typeof renderConfig==='function'&&renderConfig(),
-          informes:()=>typeof renderInformes==='function'&&renderInformes(),
+          dashboard:_safeRender(()=>typeof renderDashboard==='function'&&renderDashboard()),
+          inventario:_safeRender(()=>typeof renderInventario==='function'&&renderInventario()),
+          ventas:_safeRender(()=>typeof renderVentas==='function'&&renderVentas()),
+          clientes:_safeRender(()=>typeof renderClientes==='function'&&renderClientes()),
+          suplidores:_safeRender(()=>typeof renderSuplidores==='function'&&renderSuplidores()),
+          gastos:_safeRender(()=>typeof renderGastos==='function'&&renderGastos()),
+          nomina:_safeRender(()=>typeof renderNomina==='function'&&renderNomina()),
+          cxc:_safeRender(()=>typeof renderCXC==='function'&&renderCXC()),
+          cxp:_safeRender(()=>typeof renderCXP==='function'&&renderCXP()),
+          caja:_safeRender(()=>typeof renderCaja==='function'&&renderCaja()),
+          gastosVeh:_safeRender(()=>typeof renderGastosVeh==='function'&&renderGastosVeh()),
+          cotizaciones:_safeRender(()=>typeof renderCotizaciones==='function'&&renderCotizaciones()),
+          autorizaciones:_safeRender(()=>typeof renderAutorizaciones==='function'&&renderAutorizaciones()),
+          usuarios:()=>{if(!_modalAbierto()&&!_formUsuarioActivo()&&typeof renderUsuarios==='function')renderUsuarios();},
+          config:_safeRender(()=>typeof renderConfig==='function'&&renderConfig()),
+          informes:_safeRender(()=>typeof renderInformes==='function'&&renderInformes()),
         };
         // Solo re-renderizar si el key afecta la página activa
         const keysParaPagina={
