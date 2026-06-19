@@ -6382,7 +6382,7 @@ function renderGastosVeh(){
           <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray)">Vehículo</label>
           <select id="gveh-filtro-veh" onchange="renderGastosVeh()" style="padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
             <option value="">Todos los vehículos</option>
-            ${DB.vehiculos.map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio||''} ${v.status==='VENDIDO'?'(VENDIDO)':''}</option>`).join('')}
+            ${DB.vehiculos.map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio||''} ${v.status==='VENDIDO'?'(VENDIDO)':''}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
