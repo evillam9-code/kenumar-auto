@@ -420,7 +420,8 @@ const defaultConfig={
     {id:'dueno',nombre:'Dueño'},
     {id:'secretaria',nombre:'Secretaria'},
     {id:'asistente',nombre:'Asistente'},
-    {id:'tecnico',nombre:'Técnico'}
+    {id:'tecnico',nombre:'Técnico'},
+    {id:'vendedor',nombre:'Vendedor'}
   ],
   tiposGastoVeh:['Compra Vehículo','Aduana','Flete','Reparación','Preparación','Documentos','Seguro','Impuestos','Otros'],
   categoriasGastos:['Alquiler','Servicios','Salarios','Papelería','Mantenimiento','Publicidad','Combustible','Otros'],
@@ -431,6 +432,7 @@ const defaultUsers=[{id:'u1',nombre:'Administrador',username:'admin',password:'a
 const MARCAS=['Acura','Alfa Romeo','Audi','BMW','Buick','Cadillac','Chevrolet','Chrysler','Citroën','Dodge','Ferrari','Fiat','Ford','GMC','Honda','Hyundai','Infiniti','Isuzu','Jeep','Kia','Lamborghini','Land Rover','Lexus','Lincoln','Maserati','Mazda','Mercedes-Benz','Mitsubishi','Nissan','Peugeot','Pontiac','Porsche','Ram','Renault','Saturn','Subaru','Suzuki','Tesla','Toyota','Volkswagen','Volvo','Otro'];
 const COLORES=['Negro','Blanco','Plata','Gris','Rojo','Azul','Verde','Marrón','Beige','Dorado','Naranja','Amarillo','Morado','Vino','Champagne','Celeste','Otro'];
 const TIPOS=['Jeep/SUV','Automóvil','Sedán','Hatchback','Coupé','Convertible/Cabrio','Crossover','Todoterreno 4x4','Station Wagon/Familiar','Camioneta/Pickup','Van/Minivan','Furgoneta','Camión','Motocicleta','Vehículo Eléctrico','Vehículo Híbrido','Deportivo','Lujo/Premium','Otro'];
+const TRACCIONES=['4x2','4x4','AWD','FWD','RWD','Otro'];
 const PROVINCIAS_DO=['Azua','Bahoruco','Barahona','Dajabón','Distrito Nacional','Duarte','El Seibo','Espaillat','Hato Mayor','Hermanas Mirabal','Independencia','La Altagracia','La Romana','La Vega','María Trinidad Sánchez','Monseñor Nouel','Monte Cristi','Monte Plata','Pedernales','Peravia','Puerto Plata','Samaná','San Cristóbal','San José de Ocoa','San Juan','San Pedro de Macorís','Sánchez Ramírez','Santiago','Santiago Rodríguez','Santo Domingo','Valverde'];
 const TIPOS_GASTO_VEH=['Flete/Transporte','Aduana/Impuestos','Reparación/Mecánica','Pintura/Carrocería','Gomas/Ruedas','Batería','Cristales','Tapicería','Aire Acondicionado','Electricidad','Inspección/ITBI','Placa/Registro','Seguro','Publicidad','Comisión','Otros Gastos'];
 
@@ -461,6 +463,12 @@ let DB={
   bitacora:ls('bitacora')||[],
   feria:{extras:{},ventas:[]}
 };
+// Migración: asegurar que el rol "Vendedor" exista aunque el negocio ya tenga roles configurados antes de este cambio.
+if(!Array.isArray(DB.config.roles))DB.config.roles=[];
+if(!DB.config.roles.some(r=>r.id==='vendedor'||(r.nombre||'').toLowerCase()==='vendedor')){
+  DB.config.roles.push({id:'vendedor',nombre:'Vendedor'});
+  ss('config',DB.config);
+}
 // ── Helper universal para abrir popups (evita página en blanco en Edge/Chrome) ──
 function openPopup(htmlContent, title){
   try {
@@ -682,8 +690,8 @@ function doLogin(){
     actualizarLogoSidebar();
     logBit('Sesión','Inició sesión','—');
     showPage('dashboard');
-    setTimeout(checkAlerts,1500);
-    setTimeout(checkAlertasSeguros,2000);
+    // Punto 1: se quitan los mensajes/popups de alertas visibles al iniciar sesión.
+    // Las alertas siguen disponibles en el módulo "Alertas" (sidebar).
     _iniciarPresenciaGlobal();
     setTimeout(_verificarBackupAdmin,2500);
     setTimeout(_verificarCumpleanosHoy,3500);
@@ -2624,7 +2632,7 @@ function abrirFichaVehiculo(vehiculoId){
        })()">📄 Ver Ficha</button>`
     );
   } else {
-    _abrirFichaConTasa('${vehiculoId}', parseFloat(DB.config.tasaCambio||60));
+    _abrirFichaConTasa(vehiculoId, parseFloat(DB.config.tasaCambio||60));
   }
 }
 
@@ -2728,19 +2736,31 @@ function exportarConsultasPDF(){
   openPopup(consultasHtml);
 }
 function sincronizarStatusVehiculos(){
-  // Corrige el status de cualquier vehículo que tenga una venta vinculada
+  // Corrige el status de cualquier vehículo que tenga UNA VENTA ACTIVA vinculada
   // pero cuyo status siga como EN EEUU / ADUANA / ACTIVO.
+  // IMPORTANTE: si el vehículo NO tiene ninguna venta activa, no se toca su status —
+  // así los vehículos cuya venta fue eliminada regresan y permanecen en ACTIVO.
   let _changed=false;
-  (DB.ventas||[]).forEach(venta=>{
-    if(!venta.vehiculoId)return;
-    const vi=DB.vehiculos.findIndex(x=>x.id===venta.vehiculoId);
-    if(vi<0)return;
-    const statusActual=DB.vehiculos[vi].status;
-    if(statusActual==='EN EEUU'||statusActual==='ADUANA'||statusActual==='ACTIVO'){
-      const ventaStatus=venta.estadoVenta;
-      const nuevoStatus=ventaStatus==='VENDIDO'?'VENDIDO':(ventaStatus==='TRÁNSITO'?'TRÁNSITO':(venta.fechaEntrega?'VENDIDO':'TRÁNSITO'));
-      DB.vehiculos[vi].status=nuevoStatus;
-      _changed=true;
+  DB.vehiculos.forEach((veh,vi)=>{
+    // Buscar si este vehículo tiene alguna venta activa en DB.ventas
+    const ventaActiva=DB.ventas.find(vt=>vt.vehiculoId===veh.id);
+    if(ventaActiva){
+      // Solo corregir si el status actual es inconsistente con tener venta
+      const statusActual=veh.status;
+      if(statusActual==='EN EEUU'||statusActual==='ADUANA'||statusActual==='ACTIVO'){
+        const nuevoStatus=ventaActiva.estadoVenta==='VENDIDO'?'VENDIDO':(ventaActiva.estadoVenta==='TRÁNSITO'?'TRÁNSITO':(ventaActiva.fechaEntrega?'VENDIDO':'TRÁNSITO'));
+        DB.vehiculos[vi].status=nuevoStatus;
+        _changed=true;
+      }
+    } else {
+      // Sin venta activa: si el vehículo está en VENDIDO o TRÁNSITO por error
+      // (p.ej. la venta fue eliminada), devolverlo a ACTIVO.
+      if(veh.status==='VENDIDO'||veh.status==='TRÁNSITO'){
+        DB.vehiculos[vi].status='ACTIVO';
+        DB.vehiculos[vi].fechaVenta='';
+        DB.vehiculos[vi].precioVentaFinal=0;
+        _changed=true;
+      }
     }
   });
   if(_changed){
@@ -2868,6 +2888,9 @@ function formVehiculo(v){
       <div class="form-field"><label>Millaje</label><input type="number" id="v-millas" value="${v?.millas||0}"></div>
     </div>
     <div class="form-row c3">
+      <div class="form-field"><label>Tracción</label><div style="display:flex;gap:6px;align-items:center"><select id="v-traccion" style="flex:1"><option value="">Seleccionar...</option>${[...TRACCIONES,...(DB.config.traccionesExtra||[])].map(t=>`<option ${t===v?.traccion?'selected':''}>${t}</option>`).join('')}</select><button type="button" onclick="agregarTraccionVehiculo()" title="Agregar tracción" style="flex-shrink:0;width:32px;height:32px;border-radius:6px;border:1.5px solid var(--blue);background:#eff6ff;color:var(--blue);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">+</button></div></div>
+    </div>
+    <div class="form-row c3">
       <div class="form-field"><label>Estado</label>${
         (v&&(v.status==='TRÁNSITO'||v.status==='VENDIDO'))
           ? `<input type="text" id="v-status" value="${v.status}" disabled style="background:#f1f5f9;color:#64748b;font-weight:700">
@@ -2931,6 +2954,7 @@ function guardarVehiculo(id){
     id:id||uid(),codigo:cod,propietario:prop,marca,modelo,
     tipo:document.getElementById('v-tipo').value,
     anio:parseInt(anio),color:document.getElementById('v-color').value,
+    traccion:document.getElementById('v-traccion')?.value||'',
     millas:parseFloat(document.getElementById('v-millas').value||0),
     suplidor:document.getElementById('v-suplidor')?.value||'',
     status:document.getElementById('v-status').value,
@@ -3002,6 +3026,19 @@ function agregarColorVehiculo(){
   const sel=document.getElementById('v-color');
   if(sel){const opt=document.createElement('option');opt.value=n;opt.textContent=n;opt.selected=true;sel.appendChild(opt);}
 }
+function agregarTraccionVehiculo(){
+  const nuevo=prompt('Ingresa el nombre de la nueva tracción:');
+  if(!nuevo||!nuevo.trim())return;
+  const n=nuevo.trim();
+  if(!DB.config.traccionesExtra)DB.config.traccionesExtra=[];
+  const todasTracciones=[...TRACCIONES,...(DB.config.traccionesExtra||[])];
+  if(todasTracciones.some(t=>t.toLowerCase()===n.toLowerCase())){toast('Esta tracción ya existe','warning');return;}
+  DB.config.traccionesExtra.push(n);
+  sDB('config');
+  toast('Tracción "'+n+'" agregada ✓','success');
+  const sel=document.getElementById('v-traccion');
+  if(sel){const opt=document.createElement('option');opt.value=n;opt.textContent=n;opt.selected=true;sel.appendChild(opt);}
+}
 function verVehiculo(id){
   const v=DB.vehiculos.find(x=>x.id===id);if(!v)return;
   const i=DB.vehiculos.findIndex(x=>x.id===id);
@@ -3043,37 +3080,66 @@ function exportarInventarioPDF(){
   sincronizarStatusVehiculos();
   const filtroEstado=document.getElementById('inv-estado-filter')?.value||'ALL';
   const filtroTipo=document.getElementById('inv-tipo-filter')?.value||'ALL';
+  const textoBusqueda=(document.querySelector('#inventario .search-input')?.value||'').toLowerCase();
   let veh=DB.vehiculos;
-  if(filtroEstado==='ALL')veh=veh.filter(v=>v.status!=='VENDIDO'&&v.status!=='TRÁNSITO');
+  // Aplicar el mismo filtro de estado que en pantalla
+  if(filtroEstado==='ALL') veh=veh.filter(v=>v.status!=='VENDIDO'&&v.status!=='TRÁNSITO');
   else veh=veh.filter(v=>v.status===filtroEstado);
-  if(filtroTipo!=='ALL')veh=veh.filter(v=>v.tipoCompra===filtroTipo);
+  // Aplicar filtro de tipo de compra
+  if(filtroTipo!=='ALL') veh=veh.filter(v=>v.tipoCompra===filtroTipo);
+  // Aplicar texto del buscador si hay algo escrito
+  if(textoBusqueda) veh=veh.filter(v=>[v.codigo,v.marca,v.modelo,v.vin,v.propietario,v.color,v.placa].join(' ').toLowerCase().includes(textoBusqueda));
+  // Mismo orden que en pantalla (código descendente)
   veh=[...veh].sort((a,b)=>{const na=parseInt((a.codigo||'').replace(/\D/g,''))||0;const nb=parseInt((b.codigo||'').replace(/\D/g,''))||0;return nb-na;});
-  const empresa=DB.config.empresa||'DealerSystem';
+  // Etiqueta del filtro activo para el encabezado
+  const labelEstado={ALL:'Todos los activos',ACTIVO:'Activos',ADUANA:'En Aduana',VENDIDO:'Vendidos','TRÁNSITO':'En Tránsito','EN EEUU':'En EEUU'}[filtroEstado]||filtroEstado;
+  const labelTipo={ALL:'Todos los tipos',IMPORTACION:'Importación',LOCAL:'Compra Local',RECIBIDO:'Recibido'}[filtroTipo]||filtroTipo;
+  const sc={ACTIVO:'background:#dcfce7;color:#16a34a',VENDIDO:'background:#dbeafe;color:#2563eb',ADUANA:'background:#fef3c7;color:#d97706','TRÁNSITO':'background:#ede9fe;color:#7c3aed','EN EEUU':'background:#e0f2fe;color:#0369a1'};
   const logo=DB.config.logoData||'';
-  const _blobHtml=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inventario</title>
-  <style>body{font-family:Arial,sans-serif;padding:20px;font-size:11px}h2{font-size:16px;margin:0}
-  table{width:100%;border-collapse:collapse;margin-top:12px}
-  th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:10px}
-  td{padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:11px}tr:nth-child(even){background:#f8fafc}
-  @page{size:letter landscape;margin:8mm}@media print{button{display:none}}</style></head><body>
-  <h2>Registro de Vehiculos — ${escHtml(empresa)}</h2>
-  <p style="color:#64748b;font-size:11px">${veh.length} vehiculo(s) — Generado: ${fmtDate(today())}</p>
+  const win=openPopup(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inventario — ${escHtml(DB.config.empresa||'')}</title>
+  <style>
+    @page{size:letter landscape;margin:8mm}
+    body{font-family:Arial,sans-serif;padding:12px;font-size:11px}
+    h2{font-size:15px;margin:0}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:10px}
+    td{padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:11px}
+    tr:nth-child(even){background:#f8fafc}
+    .bg{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2563eb;padding-bottom:10px;margin-bottom:12px}
+    @media print{.noprint{display:none}}
+  </style></head><body>
+  <div class="hdr">
+    <div>
+      ${logo?`<img src="${logo}" style="max-height:40px;margin-bottom:6px;display:block" alt="">`:''}
+      <h2>${escHtml(DB.config.empresa||'DealerSystem')}</h2>
+      <div style="color:#6b7280;font-size:11px">REGISTRO DE VEHÍCULOS — ${fmtDate(today())}</div>
+      <div style="color:#6b7280;font-size:10px;margin-top:2px">Filtro: ${escHtml(labelEstado)} · ${escHtml(labelTipo)}${textoBusqueda?' · Búsqueda: "'+escHtml(textoBusqueda)+'"':''}</div>
+    </div>
+    <div style="text-align:right;font-size:11px;color:#6b7280">${veh.length} vehículo(s)</div>
+  </div>
   <table><thead><tr>
-    <th>Codigo</th><th>Vehiculo (Anio Color)</th><th>Chasis VIN</th><th>Propietario</th><th>Tipo Compra</th><th>Estado</th><th>Fecha</th>
+    <th>Código</th><th>Vehículo</th><th>Año</th><th>Color</th><th>Tipo</th><th>VIN / Chasis</th><th>Propietario</th><th>Tipo Compra</th><th>Estado</th><th>Fecha</th>
   </tr></thead><tbody>
-  ${veh.map(v=>{
-    const prop=v.propietario||'—';
-    return '<tr><td>'+escHtml(v.codigo||'—')+'</td><td>'+escHtml(v.marca||'')+' '+escHtml(v.modelo||'')+' '+escHtml(String(v.anio||''))+' '+escHtml(v.color||'')+'</td><td>'+escHtml(v.vin||'—')+'</td><td>'+escHtml(prop)+'</td><td>'+({'IMPORTACION':'Importacion','LOCAL':'Compra Local','RECIBIDO':'Recibido'}[v.tipoCompra]||v.tipoCompra||'—')+'</td><td>'+(v.status||'—')+'</td><td>'+fmtDate(v.fecha||'')+'</td></tr>';
-  }).join('')}
+  ${veh.map(v=>`<tr>
+    <td style="font-family:monospace;font-weight:700">${escHtml(v.codigo||'—')}</td>
+    <td style="font-weight:700">${escHtml(v.marca||'')} ${escHtml(v.modelo||'')}</td>
+    <td>${v.anio||'—'}</td>
+    <td>${escHtml(v.color||'—')}</td>
+    <td style="font-size:10px">${escHtml(v.tipo||'—')}</td>
+    <td style="font-family:monospace;font-size:10px">${escHtml(v.vin||'—')}</td>
+    <td style="font-size:10px">${escHtml(v.propietario||'—')}</td>
+    <td>${({IMPORTACION:'Importación',LOCAL:'Compra Local',RECIBIDO:'Recibido'}[v.tipoCompra]||v.tipoCompra||'—')}</td>
+    <td><span class="bg" style="${sc[v.status]||'background:#f1f5f9;color:#6b7280'}">${v.status||'—'}</span></td>
+    <td>${fmtDate(v.fecha||'')}</td>
+  </tr>`).join('')}
   </tbody></table>
-  <br><button onclick="window.print()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">Imprimir</button>
-  </body></html>`;
-  const _blobObj=new Blob([_blobHtml],{type:'text/html;charset=utf-8'});
-  const _blobUrl=URL.createObjectURL(_blobObj);
-  const win=window.open(_blobUrl,'_blank');
-  if(!win){const _a=document.createElement('a');_a.href=_blobUrl;_a.target='_blank';_a.click();}
-  setTimeout(()=>URL.revokeObjectURL(_blobUrl),60000);
+  <div class="noprint" style="margin-top:20px;text-align:center">
+    <button onclick="window.print()" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700">🖨️ Imprimir / PDF</button>
+  </div>
+  </body></html>`);
   win.onafterprint=()=>{try{win.close();}catch(e){}};
+  win.addEventListener('focus',()=>{window.focus();});
 }
 
 function gastosVehiculo(vid){
@@ -5165,49 +5231,53 @@ function eliminarCuentaBancoCuentas(bi,ci){
   sDB('config');toast('Cuenta eliminada','success');renderCuentas();
 }
 
-function renderAlertas(){
-  // Verificar si el usuario tiene acceso al módulo de alertas
-  const esAdmin=currentUser?.role==='admin';
-  const tieneAccesoAlertas=esAdmin||(currentUser?.modulos||[]).includes('alertas');
-  if(!tieneAccesoAlertas){
-    document.getElementById('page-alertas').innerHTML='<div style="text-align:center;padding:48px"><div style="font-size:48px;margin-bottom:12px">🔒</div><div style="font-size:18px;font-weight:700;color:var(--navy)">Acceso restringido</div><p style="color:var(--gray);margin-top:8px">No tienes permiso para ver las alertas del sistema.<br>Contacta al administrador para solicitar acceso.</p></div>';
-    return;
-  }
+// Etiquetas de tipo y módulo usadas por el módulo de Alertas (filtros, exportación e impresión)
+const ALERTAS_TIPO_LABEL={SIN_VIN:'Sin VIN',SIN_COSTO:'Sin costos',SIN_MARCA:'Sin marca',SIN_MODELO:'Sin modelo',SIN_TIPO_VEH:'Sin tipo',SIN_COLOR:'Sin color',SIN_ANIO:'Sin año',CXP:'CxP pendientes',CXC_VENCIDA:'CxC vencidas',CXC:'CxC pendientes',SIN_VENDER_6M:'6 meses sin vender',SIN_VENDER_1A:'1 año sin vender',DOCS:'Docs pendientes',PLACA_EXH_VENCIDA:'Placa exhibición vencida',PLACA_EXH_PROX:'Placa exhibición por vencer'};
+const ALERTAS_MODULO_LABEL={inventario:'Inventario',gastosVeh:'Gastos de Vehículo',cxp:'Cuentas por Pagar',cxc:'Cuentas por Cobrar',ventas:'Ventas'};
+
+// Genera la lista completa de alertas activas (compartida por pantalla, filtros, impresión y exportación)
+function generarTodasAlertas(){
   const hoy=today();
   const hoyDate=new Date();
   const alertas=[];
 
-  // 1. Vehículos sin VIN
-  DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&!v.vin).forEach(v=>{
-    alertas.push({tipo:'SIN_VIN',nivel:'warning',titulo:'Vehículo sin Chasis/VIN',msg:`${v.codigo||''} ${v.marca} ${v.modelo} ${v.anio}`,modulo:'inventario',id:'vin_'+v.id});
+  // 1. Vehículos con datos faltantes (VIN, marca, modelo, tipo, color, año)
+  DB.vehiculos.filter(v=>v.status!=='VENDIDO').forEach(v=>{
+    const nom=`${v.codigo||'—'} ${v.marca||''} ${v.modelo||''} ${v.anio||''}`.replace(/\s+/g,' ').trim();
+    if(!v.vin)alertas.push({tipo:'SIN_VIN',nivel:'warning',titulo:'Vehículo sin Chasis/VIN',msg:nom,modulo:'inventario',id:'vin_'+v.id,vehiculoId:v.id});
+    if(!v.marca)alertas.push({tipo:'SIN_MARCA',nivel:'warning',titulo:'Vehículo sin marca',msg:nom,modulo:'inventario',id:'marca_'+v.id,vehiculoId:v.id});
+    if(!v.modelo)alertas.push({tipo:'SIN_MODELO',nivel:'warning',titulo:'Vehículo sin modelo',msg:nom,modulo:'inventario',id:'modelo_'+v.id,vehiculoId:v.id});
+    if(!v.tipo)alertas.push({tipo:'SIN_TIPO_VEH',nivel:'warning',titulo:'Vehículo sin tipo',msg:nom,modulo:'inventario',id:'tipoveh_'+v.id,vehiculoId:v.id});
+    if(!v.color)alertas.push({tipo:'SIN_COLOR',nivel:'warning',titulo:'Vehículo sin color',msg:nom,modulo:'inventario',id:'color_'+v.id,vehiculoId:v.id});
+    if(!v.anio)alertas.push({tipo:'SIN_ANIO',nivel:'warning',titulo:'Vehículo sin año',msg:nom,modulo:'inventario',id:'anio_'+v.id,vehiculoId:v.id});
   });
   // 2. Vehículos sin costos
   DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&!(DB.gastosVehiculos||[]).some(g=>g.vehiculoId===v.id)).forEach(v=>{
-    alertas.push({tipo:'SIN_COSTO',nivel:'warning',titulo:'Vehículo sin costos registrados',msg:`${v.codigo||''} ${v.marca} ${v.modelo} ${v.anio}`,modulo:'gastosVeh',id:'costo_'+v.id});
+    alertas.push({tipo:'SIN_COSTO',nivel:'warning',titulo:'Vehículo sin costos registrados',msg:`${v.codigo||''} ${v.marca} ${v.modelo} ${v.anio}`,modulo:'gastosVeh',id:'costo_'+v.id,vehiculoId:v.id});
   });
   // 3. CXP pendientes
   (DB.gastosVehiculos||[]).filter(g=>parseFloat(g.montoPendiente||0)>0).forEach(g=>{
     const v=DB.vehiculos.find(x=>x.id===g.vehiculoId);
-    alertas.push({tipo:'CXP',nivel:'danger',titulo:'Gasto pendiente por pagar',msg:`${v?v.codigo+' '+v.marca+' '+v.modelo:'Vehículo'} — ${g.tipo} — ${(g.moneda||'RD$')==='USD'?'$'+parseFloat(g.montoPendiente).toLocaleString('en-US',{minimumFractionDigits:2})+' USD':fmt(g.montoPendiente)}`,modulo:'cxp',id:'cxp_'+g.id});
+    alertas.push({tipo:'CXP',nivel:'danger',titulo:'Gasto pendiente por pagar',msg:`${v?v.codigo+' '+v.marca+' '+v.modelo:'Vehículo'} — ${g.tipo} — ${(g.moneda||'RD$')==='USD'?'$'+parseFloat(g.montoPendiente).toLocaleString('en-US',{minimumFractionDigits:2})+' USD':fmt(g.montoPendiente)}`,modulo:'cxp',id:'cxp_'+g.id,vehiculoId:g.vehiculoId||''});
   });
   // 4. CXC vencidas
   (DB.cxc||[]).filter(x=>(x.status==='PENDIENTE'||x.status==='PARCIAL')&&x.fechaVence&&x.fechaVence<=hoy).forEach(x=>{
-    alertas.push({tipo:'CXC_VENCIDA',nivel:'danger',titulo:'CxC Vencida',msg:`${x.cliente} — ${fmt(x.saldo)} — Venció: ${fmtDate(x.fechaVence)}`,modulo:'cxc',id:'cxcv_'+x.id});
+    alertas.push({tipo:'CXC_VENCIDA',nivel:'danger',titulo:'CxC Vencida',msg:`${x.cliente} — ${fmt(x.saldo)} — Venció: ${fmtDate(x.fechaVence)}`,modulo:'cxc',id:'cxcv_'+x.id,vehiculoId:x.vehiculoId||''});
   });
   // 5. CXC pendientes
   (DB.cxc||[]).filter(x=>(x.status==='PENDIENTE'||x.status==='PARCIAL')&&(!x.fechaVence||x.fechaVence>hoy)).forEach(x=>{
-    alertas.push({tipo:'CXC',nivel:'warning',titulo:'Cuenta por cobrar pendiente',msg:`${x.cliente} — ${fmt(x.saldo)}`,modulo:'cxc',id:'cxc_'+x.id});
+    alertas.push({tipo:'CXC',nivel:'warning',titulo:'Cuenta por cobrar pendiente',msg:`${x.cliente} — ${fmt(x.saldo)}`,modulo:'cxc',id:'cxc_'+x.id,vehiculoId:x.vehiculoId||''});
   });
   // 6. Vehículos sin vender 6+ meses
   DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&v.fecha).forEach(v=>{
     const dias=Math.floor((hoyDate-new Date(v.fecha+'T12:00:00'))/(1000*60*60*24));
-    if(dias>=365)alertas.push({tipo:'SIN_VENDER_1A',nivel:'danger',titulo:'1 Año sin venderse',msg:`${v.codigo||''} ${v.marca} ${v.modelo} — ${dias} días`,modulo:'inventario',id:'sv1_'+v.id});
-    else if(dias>=180)alertas.push({tipo:'SIN_VENDER_6M',nivel:'warning',titulo:'6 Meses sin venderse',msg:`${v.codigo||''} ${v.marca} ${v.modelo} — ${dias} días`,modulo:'inventario',id:'sv6_'+v.id});
+    if(dias>=365)alertas.push({tipo:'SIN_VENDER_1A',nivel:'danger',titulo:'1 Año sin venderse',msg:`${v.codigo||''} ${v.marca} ${v.modelo} — ${dias} días`,modulo:'inventario',id:'sv1_'+v.id,vehiculoId:v.id});
+    else if(dias>=180)alertas.push({tipo:'SIN_VENDER_6M',nivel:'warning',titulo:'6 Meses sin venderse',msg:`${v.codigo||''} ${v.marca} ${v.modelo} — ${dias} días`,modulo:'inventario',id:'sv6_'+v.id,vehiculoId:v.id});
   });
   // 7. Documentos de venta pendientes
   DB.ventas.filter(v=>v.docsPendientes&&v.fechaLimDocs).forEach(v=>{
     const venc=v.fechaLimDocs<=hoy;
-    alertas.push({tipo:'DOCS',nivel:venc?'danger':'warning',titulo:venc?'Documentos de entrega VENCIDOS':'Documentos de entrega pendientes',msg:`${v.vehiculo||''} — Límite: ${fmtDate(v.fechaLimDocs)}`,modulo:'ventas',id:'doc_'+v.id});
+    alertas.push({tipo:'DOCS',nivel:venc?'danger':'warning',titulo:venc?'Documentos de entrega VENCIDOS':'Documentos de entrega pendientes',msg:`${v.vehiculo||''} — Límite: ${fmtDate(v.fechaLimDocs)}`,modulo:'ventas',id:'doc_'+v.id,vehiculoId:v.vehiculoId||''});
   });
   // 8. Placa de Exhibición (DGII) — vence a los 90 días del endorso
   DB.ventas.filter(v=>v.tipoTransferencia==='endoso'&&v.fechaPlacaExhibicion).forEach(v=>{
@@ -5216,58 +5286,120 @@ function renderAlertas(){
     const venceStr=vence.toISOString().split('T')[0];
     const diasRestantes=Math.floor((vence-hoyDate)/(1000*60*60*24));
     if(diasRestantes<0){
-      alertas.push({tipo:'PLACA_EXH_VENCIDA',nivel:'danger',titulo:'🚨 Placa Exhibición VENCIDA',msg:`${v.vehiculo||''} — Cliente: ${v.cliente||''} — Venció: ${fmtDate(venceStr)} (hace ${Math.abs(diasRestantes)} días)`,modulo:'ventas',id:'pex_'+v.id});
+      alertas.push({tipo:'PLACA_EXH_VENCIDA',nivel:'danger',titulo:'🚨 Placa Exhibición VENCIDA',msg:`${v.vehiculo||''} — Cliente: ${v.cliente||''} — Venció: ${fmtDate(venceStr)} (hace ${Math.abs(diasRestantes)} días)`,modulo:'ventas',id:'pex_'+v.id,vehiculoId:v.vehiculoId||''});
     } else if(diasRestantes<=15){
-      alertas.push({tipo:'PLACA_EXH_PROX',nivel:'warning',titulo:'⚠️ Placa Exhibición por vencer',msg:`${v.vehiculo||''} — Cliente: ${v.cliente||''} — Vence: ${fmtDate(venceStr)} (en ${diasRestantes} días)`,modulo:'ventas',id:'pex_'+v.id});
+      alertas.push({tipo:'PLACA_EXH_PROX',nivel:'warning',titulo:'⚠️ Placa Exhibición por vencer',msg:`${v.vehiculo||''} — Cliente: ${v.cliente||''} — Vence: ${fmtDate(venceStr)} (en ${diasRestantes} días)`,modulo:'ventas',id:'pex_'+v.id,vehiculoId:v.vehiculoId||''});
     }
   });
+  return alertas;
+}
+
+let alertasFiltroTipo='';
+let alertasFiltroModulo='';
+let alertasFiltroVehiculo='';
+
+function alertasAplicarFiltro(campo,val){
+  if(campo==='tipo')alertasFiltroTipo=val;else if(campo==='modulo')alertasFiltroModulo=val;else alertasFiltroVehiculo=val;
+  renderAlertas();
+}
+
+function renderAlertas(){
+  // Verificar si el usuario tiene acceso al módulo de alertas
+  const esAdmin=currentUser?.role==='admin';
+  const tieneAccesoAlertas=esAdmin||(currentUser?.modulos||[]).includes('alertas');
+  if(!tieneAccesoAlertas){
+    document.getElementById('page-alertas').innerHTML='<div style="text-align:center;padding:48px"><div style="font-size:48px;margin-bottom:12px">🔒</div><div style="font-size:18px;font-weight:700;color:var(--navy)">Acceso restringido</div><p style="color:var(--gray);margin-top:8px">No tienes permiso para ver las alertas del sistema.<br>Contacta al administrador para solicitar acceso.</p></div>';
+    return;
+  }
+  const todas=generarTodasAlertas();
+  // Tipos, módulos y vehículos presentes, para construir los selects de filtro dinámicamente
+  const tiposPresentes=[...new Set(todas.map(a=>a.tipo))];
+  const modulosPresentes=[...new Set(todas.map(a=>a.modulo))];
+  const vehiculosPresentes=[...new Set(todas.filter(a=>a.vehiculoId).map(a=>a.vehiculoId))]
+    .map(id=>DB.vehiculos.find(v=>v.id===id)).filter(Boolean);
+  const alertas=todas.filter(a=>(!alertasFiltroTipo||a.tipo===alertasFiltroTipo)&&(!alertasFiltroModulo||a.modulo===alertasFiltroModulo)&&(!alertasFiltroVehiculo||a.vehiculoId===alertasFiltroVehiculo));
 
   const danger=alertas.filter(a=>a.nivel==='danger');
   const warning=alertas.filter(a=>a.nivel==='warning');
 
   document.getElementById('page-alertas').innerHTML=`
     <div class="page-header">
-      <div><h1>🔔 Alertas del Sistema</h1><p>${danger.length} críticas — ${warning.length} advertencias</p></div>
+      <div><h1>🔔 Alertas del Sistema</h1><p>${danger.length} críticas — ${warning.length} advertencias${(alertasFiltroTipo||alertasFiltroModulo||alertasFiltroVehiculo)?' (filtradas de '+todas.length+' totales)':''}</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" onclick="alertasSeleccionadas=new Set(document.querySelectorAll('.alerta-check').forEach(c=>{c.checked=true;alertasSeleccionadas.add(c.value);})||alertasSeleccionadas);renderAlertas()">☑️ Seleccionar Todas</button>
+        <button class="btn btn-secondary btn-sm" onclick="imprimirAlertas()">🖨️ Imprimir</button>
         <button class="btn btn-secondary btn-sm" onclick="exportarAlertasPDF()">📄 Exportar PDF</button>
         <button class="btn btn-secondary btn-sm" onclick="renderAlertas()">🔄 Actualizar</button>
       </div>
     </div>
-    ${alertas.length===0?`<div class="card" style="text-align:center;padding:48px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--green)">Sin alertas activas</div><p style="color:var(--gray);margin-top:8px">El sistema está en orden</p></div>`:`
+    <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <div class="form-field" style="margin:0"><label style="font-size:10px">Filtrar por Tipo</label>
+        <select onchange="alertasAplicarFiltro('tipo',this.value)" style="padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos los tipos</option>
+          ${tiposPresentes.map(t=>`<option value="${t}" ${alertasFiltroTipo===t?'selected':''}>${ALERTAS_TIPO_LABEL[t]||t}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field" style="margin:0"><label style="font-size:10px">Filtrar por Módulo</label>
+        <select onchange="alertasAplicarFiltro('modulo',this.value)" style="padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos los módulos</option>
+          ${modulosPresentes.map(m=>`<option value="${m}" ${alertasFiltroModulo===m?'selected':''}>${ALERTAS_MODULO_LABEL[m]||m}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field" style="margin:0"><label style="font-size:10px">Filtrar por Vehículo</label>
+        <select onchange="alertasAplicarFiltro('vehiculo',this.value)" style="padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
+          <option value="">Todos los vehículos</option>
+          ${vehiculosPresentes.map(v=>`<option value="${v.id}" ${alertasFiltroVehiculo===v.id?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)}</option>`).join('')}
+        </select>
+      </div>
+      ${(alertasFiltroTipo||alertasFiltroModulo||alertasFiltroVehiculo)?`<button class="btn btn-secondary btn-sm" onclick="alertasFiltroTipo='';alertasFiltroModulo='';alertasFiltroVehiculo='';renderAlertas()">✕ Quitar filtros</button>`:''}
+    </div>
+    ${alertas.length===0?`<div class="card" style="text-align:center;padding:48px"><div style="font-size:48px;margin-bottom:12px">✅</div><div style="font-size:18px;font-weight:700;color:var(--green)">Sin alertas activas</div><p style="color:var(--gray);margin-top:8px">${todas.length===0?'El sistema está en orden':'No hay alertas con los filtros seleccionados'}</p></div>`:`
     <div class="card">
       ${danger.length?`<div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--red2)">🔴 Críticas (${danger.length})</div>
       ${danger.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px;margin-bottom:6px;background:var(--red2);border-radius:8px;border-left:4px solid var(--red)">
         <input type="checkbox" class="alerta-check" value="${a.id}" ${alertasSeleccionadas.has(a.id)?'checked':''} onchange="if(this.checked)alertasSeleccionadas.add(this.value);else alertasSeleccionadas.delete(this.value)" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
-        <div style="flex:1"><div style="font-weight:700;font-size:13px;color:var(--red)">${escHtml(a.titulo)}</div><div style="font-size:12px;color:var(--navy);margin-top:2px">${escHtml(a.msg)}</div></div>
+        <div style="flex:1"><div style="font-weight:700;font-size:13px;color:var(--red)">${escHtml(a.titulo)} <span style="font-weight:500;font-size:10px;color:var(--gray)">(${ALERTAS_MODULO_LABEL[a.modulo]||a.modulo})</span></div><div style="font-size:12px;color:var(--navy);margin-top:2px">${escHtml(a.msg)}</div></div>
         <button class="btn btn-sm" style="background:var(--red);color:#fff;flex-shrink:0" onclick="showPage('${a.modulo}')">Ver →</button>
       </div>`).join('')}`:''}
       ${warning.length?`<div style="font-size:13px;font-weight:700;color:var(--amber);margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--amber2);margin-top:${danger.length?'16px':'0'}">🟡 Advertencias (${warning.length})</div>
       ${warning.map(a=>`<div style="display:flex;align-items:flex-start;gap:10px;padding:10px;margin-bottom:6px;background:var(--amber2);border-radius:8px;border-left:4px solid var(--amber)">
         <input type="checkbox" class="alerta-check" value="${a.id}" ${alertasSeleccionadas.has(a.id)?'checked':''} onchange="if(this.checked)alertasSeleccionadas.add(this.value);else alertasSeleccionadas.delete(this.value)" style="width:16px;height:16px;margin-top:2px;flex-shrink:0">
-        <div style="flex:1"><div style="font-weight:700;font-size:13px;color:var(--amber)">${escHtml(a.titulo)}</div><div style="font-size:12px;color:var(--navy);margin-top:2px">${escHtml(a.msg)}</div></div>
+        <div style="flex:1"><div style="font-weight:700;font-size:13px;color:var(--amber)">${escHtml(a.titulo)} <span style="font-weight:500;font-size:10px;color:var(--gray)">(${ALERTAS_MODULO_LABEL[a.modulo]||a.modulo})</span></div><div style="font-size:12px;color:var(--navy);margin-top:2px">${escHtml(a.msg)}</div></div>
         <button class="btn btn-sm" style="background:var(--amber);color:#fff;flex-shrink:0" onclick="showPage('${a.modulo}')">Ver →</button>
       </div>`).join('')}`:''}
     </div>`}`;
 }
-function exportarAlertasPDF(){
-  const hoy=today();const hoyDate=new Date();
-  const alertas=[];
-  DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&!v.vin).forEach(v=>alertas.push({nivel:'🔴',titulo:'Sin Chasis/VIN',msg:`${v.codigo||''} ${v.marca} ${v.modelo} ${v.anio}`}));
-  DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&!(DB.gastosVehiculos||[]).some(g=>g.vehiculoId===v.id)).forEach(v=>alertas.push({nivel:'🟡',titulo:'Sin costos',msg:`${v.codigo||''} ${v.marca} ${v.modelo}`}));
-  (DB.gastosVehiculos||[]).filter(g=>parseFloat(g.montoPendiente||0)>0).forEach(g=>{const v=DB.vehiculos.find(x=>x.id===g.vehiculoId);alertas.push({nivel:'🔴',titulo:'CxP Pendiente',msg:`${v?v.codigo:'?'} ${g.tipo} ${fmt(g.montoPendiente)}`});});
-  (DB.cxc||[]).filter(x=>(x.status==='PENDIENTE'||x.status==='PARCIAL')&&x.fechaVence&&x.fechaVence<=hoy).forEach(x=>alertas.push({nivel:'🔴',titulo:'CxC Vencida',msg:`${x.cliente} — ${fmt(x.saldo)}`}));
-  DB.vehiculos.filter(v=>v.status!=='VENDIDO'&&v.fecha).forEach(v=>{const d=Math.floor((hoyDate-new Date(v.fecha+'T12:00:00'))/(1000*60*60*24));if(d>=365)alertas.push({nivel:'🔴',titulo:'1 Año sin vender',msg:`${v.codigo} ${v.marca} ${v.modelo} — ${d} días`});else if(d>=180)alertas.push({nivel:'🟡',titulo:'6 Meses sin vender',msg:`${v.codigo} ${v.marca} ${v.modelo} — ${d} días`});});
-  const win=openPopup(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alertas</title><style>body{font-family:Arial,sans-serif;padding:24px;font-size:12px}h2{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#0f172a;color:#fff;padding:8px;font-size:11px;text-align:left}td{padding:8px;border-bottom:1px solid #e2e8f0}@media print{button{display:none}}</style></head><body>
+
+// Construye la tabla imprimible: usa la selección de checkboxes si hay alguna marcada,
+// si no hay nada seleccionado imprime lo que esté visible según los filtros activos.
+function _alertasParaImprimir(){
+  const todas=generarTodasAlertas();
+  const filtradas=todas.filter(a=>(!alertasFiltroTipo||a.tipo===alertasFiltroTipo)&&(!alertasFiltroModulo||a.modulo===alertasFiltroModulo)&&(!alertasFiltroVehiculo||a.vehiculoId===alertasFiltroVehiculo));
+  if(alertasSeleccionadas.size>0)return filtradas.filter(a=>alertasSeleccionadas.has(a.id));
+  return filtradas;
+}
+function _alertasReporteHTML(alertas,titulo){
+  const hoy=today();
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title><style>@page{size:letter portrait;margin:14mm}body{font-family:Arial,sans-serif;padding:0;font-size:12px}h2{font-size:18px}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#0f172a;color:#fff;padding:8px;font-size:11px;text-align:left}td{padding:8px;border-bottom:1px solid #e2e8f0}@media print{button{display:none}}</style></head><body>
   ${DB.config.logoData?`<img src="${DB.config.logoData}" style="max-height:50px;margin-bottom:8px;display:block">`:''}
-  <h2>${escHtml(DB.config.empresa||'KENUMAR')} — REPORTE DE ALERTAS</h2>
-  <div style="color:#6b7280;font-size:11px;margin-bottom:16px">Fecha: ${fmtDate(hoy)} | Total: ${alertas.length} alertas</div>
-  <table><thead><tr><th>Nivel</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>
-  ${alertas.map(a=>`<tr><td>${a.nivel}</td><td style="font-weight:700">${escHtml(a.titulo)}</td><td>${escHtml(a.msg)}</td></tr>`).join('')}
+  <h2>${escHtml(DB.config.empresa||'KENUMAR')} — ${titulo}</h2>
+  <div style="color:#6b7280;font-size:11px;margin-bottom:16px">Fecha: ${fmtDate(hoy)} | Total: ${alertas.length} alerta(s)${(alertasFiltroTipo||alertasFiltroModulo||alertasFiltroVehiculo)?' | Filtros: '+(alertasFiltroTipo?ALERTAS_TIPO_LABEL[alertasFiltroTipo]||alertasFiltroTipo:'Todos los tipos')+' / '+(alertasFiltroModulo?ALERTAS_MODULO_LABEL[alertasFiltroModulo]||alertasFiltroModulo:'Todos los módulos')+(alertasFiltroVehiculo?' / Vehículo: '+escHtml((DB.vehiculos.find(v=>v.id===alertasFiltroVehiculo)||{}).codigo||''):''):''}</div>
+  <table><thead><tr><th>Nivel</th><th>Tipo</th><th>Módulo</th><th>Detalle</th></tr></thead><tbody>
+  ${alertas.map(a=>`<tr><td>${a.nivel==='danger'?'🔴':'🟡'}</td><td style="font-weight:700">${escHtml(a.titulo)}</td><td>${escHtml(ALERTAS_MODULO_LABEL[a.modulo]||a.modulo)}</td><td>${escHtml(a.msg)}</td></tr>`).join('')}
   </tbody></table>
-  <div style="margin-top:20px;text-align:center"><button onclick="window.print()" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨️ Imprimir PDF</button></div>
-  </body></html>`);
-  // Cerrar ventana tras imprimir o al cerrar manualmente
+  <div style="margin-top:20px;text-align:center"><button onclick="window.print()" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer">🖨️ Imprimir</button></div>
+  </body></html>`;
+}
+function imprimirAlertas(){
+  const alertas=_alertasParaImprimir();
+  if(alertas.length===0){toast('No hay alertas para imprimir','warning');return;}
+  const win=openPopup(_alertasReporteHTML(alertas,'REPORTE DE ALERTAS'+(alertasSeleccionadas.size>0?' SELECCIONADAS':'')));
+  win.onafterprint=()=>{ try{win.close();}catch(e){} };
+  win.addEventListener('focus',()=>{ window.focus(); });
+}
+function exportarAlertasPDF(){
+  const alertas=_alertasParaImprimir();
+  const win=openPopup(_alertasReporteHTML(alertas,'REPORTE DE ALERTAS'));
   win.onafterprint=()=>{ try{win.close();}catch(e){} };
   win.addEventListener('focus',()=>{ window.focus(); });
 }
@@ -5277,7 +5409,7 @@ function guardarPermisosUsuarioConfig(i){
   const u=DB.users[i];
   if(!u)return;
   const MODS_IDS=['dashboard','informes','consultas','suplidores','inventario','gastosVeh','cxp','clientes','ventas','cxc','gastos','nomina','caja','cotizaciones','autorizaciones','seguros','facturaExterna','alertas','verSaldoCaja','chat','cuentas','cumpleanos','prestamos'];
-  const ALERT_IDS=['SIN_VIN','SIN_COSTO','CXP','CXC_VENCIDA','CXC','SIN_VENDER_6M','SIN_VENDER_1A','DOCS'];
+  const ALERT_IDS=['SIN_VIN','SIN_COSTO','SIN_MARCA','SIN_MODELO','SIN_TIPO_VEH','SIN_COLOR','SIN_ANIO','CXP','CXC_VENCIDA','CXC','SIN_VENDER_6M','SIN_VENDER_1A','DOCS'];
   if(u.role!=='admin'){
     const mods=MODS_IDS.filter(id=>document.getElementById(`cfg-mod-${i}-${id}`)?.checked);
     const alertas=ALERT_IDS.filter(id=>document.getElementById(`cfg-alerta-${i}-${id}`)?.checked);
@@ -5400,8 +5532,10 @@ function navGroupToggle(gid){
 function _navModuloVisible(id){
   if(!currentUser)return false;
   if(currentUser.role==='admin')return true;
-  const perms=currentUser.permisos||{};
-  return perms[id]===true||perms[id]==='true';
+  // CORREGIDO: antes revisaba currentUser.permisos[id] (campo que solo guarda
+  // editar/eliminar/imprimir, nunca módulos), por lo que los módulos del menú
+  // dinámico casi nunca se mostraban. Ahora usa modulos[], igual que canAccess().
+  return (currentUser.modulos||[]).includes(id);
 }
 // ═════════════════════════════════════════════════════════════════════════════
 
@@ -5421,26 +5555,10 @@ function renderConfig(){
   ];
   // Si el admin no tiene alertasPermitidas, ve todas por defecto
   const misAlertas=currentUser?.alertasPermitidas||ALERT_TYPES_ALL.map(a=>a.id);
-  const misNotifHTML=`
-    <div class="cfg-acc"><div class="cfg-acc-hdr" onclick="cfgToggle('notif')"><span class="cfg-acc-title">🔔 Mis Notificaciones al Entrar</span><span class="cfg-acc-ico" id="cfg-ico-notif" style="transform:rotate(180deg)">▼</span></div><div class="cfg-acc-body open" id="cfg-body-notif">
-      <p style="font-size:13px;color:var(--gray);margin-bottom:14px">Selecciona cuáles alertas quieres ver al iniciar sesión. Si desactivas una, el popup ya no aparecerá.</p>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
-        ${ALERT_TYPES_ALL.map(a=>`
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;padding:6px 12px;background:var(--gray2);border:1.5px solid var(--gray3);border-radius:8px;cursor:pointer">
-            <input type="checkbox" id="mn-${a.id}" ${misAlertas.includes(a.id)?'checked':''} style="accent-color:var(--blue);width:14px;height:14px">
-            ${a.label}
-          </label>`).join('')}
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="guardarMisNotificaciones()">💾 Guardar mis notificaciones</button>
-        <button class="btn btn-secondary btn-sm" onclick="
-          document.querySelectorAll('[id^=mn-]').forEach(c=>c.checked=true);
-        ">✅ Activar todas</button>
-        <button class="btn btn-secondary btn-sm" onclick="
-          document.querySelectorAll('[id^=mn-]').forEach(c=>c.checked=false);
-        ">🔕 Desactivar todas</button>
-      </div>
-    </div></div>`;
+  // NOTA: se eliminó la sección "Mis Notificaciones al Entrar" (popups de alerta al iniciar sesión),
+  // ya que las alertas visibles emergentes fueron quitadas (punto 1). Las alertas siguen disponibles
+  // de forma íntegra en el módulo "Alertas" del menú, con filtros e impresión.
+  const misNotifHTML='';
   // Si Firebase activo pero aún no cargó, mostrar aviso
   const fbPendiente=window._fbActivo&&!window._fbCargado;
   document.getElementById('page-config').innerHTML=`
@@ -5694,7 +5812,7 @@ function renderConfig(){
       <div style="display:flex;flex-direction:column;gap:12px">
         ${DB.users.map((u,ui)=>{
           const MODS_LIST=[{id:'dashboard',label:'Inicio'},{id:'informes',label:'Informe'},{id:'consultas',label:'🔍 Consultas'},{id:'suplidores',label:'Suplidores'},{id:'inventario',label:'Reg. Vehículo'},{id:'gastosVeh',label:'Gastos Veh.'},{id:'cxp',label:'CxP'},{id:'clientes',label:'Clientes'},{id:'ventas',label:'Ventas'},{id:'cxc',label:'CxC'},{id:'gastos',label:'Gastos Emp.'},{id:'nomina',label:'Nómina'},{id:'caja',label:'Caja'},{id:'cotizaciones',label:'Cotizaciones'},{id:'autorizaciones',label:'Autorizaciones'},{id:'cuentas',label:'Cuentas'},{id:'cumpleanos',label:'Cumpleaños'}];
-          const ALERT_TYPES=[{id:'SIN_VIN',label:'Sin VIN'},{id:'SIN_COSTO',label:'Sin costos'},{id:'CXP',label:'CxP pendientes'},{id:'CXC_VENCIDA',label:'CxC vencidas'},{id:'CXC',label:'CxC pendientes'},{id:'SIN_VENDER_6M',label:'6m sin vender'},{id:'SIN_VENDER_1A',label:'1 año sin vender'},{id:'DOCS',label:'Docs pendientes'}];
+          const ALERT_TYPES=[{id:'SIN_VIN',label:'Sin VIN'},{id:'SIN_COSTO',label:'Sin costos'},{id:'SIN_MARCA',label:'Sin marca'},{id:'SIN_MODELO',label:'Sin modelo'},{id:'SIN_TIPO_VEH',label:'Sin tipo'},{id:'SIN_COLOR',label:'Sin color'},{id:'SIN_ANIO',label:'Sin año'},{id:'CXP',label:'CxP pendientes'},{id:'CXC_VENCIDA',label:'CxC vencidas'},{id:'CXC',label:'CxC pendientes'},{id:'SIN_VENDER_6M',label:'6m sin vender'},{id:'SIN_VENDER_1A',label:'1 año sin vender'},{id:'DOCS',label:'Docs pendientes'}];
           const mods=u.modulos||[];
           const alertas=u.alertasPermitidas||ALERT_TYPES.map(a=>a.id);
           return '<div style="background:var(--gray2);border-radius:10px;padding:14px;border:1px solid var(--gray3);margin-bottom:8px">'
@@ -5724,7 +5842,7 @@ function renderConfig(){
     </div>`;
 }
 function guardarMisNotificaciones(){
-  const ALERT_IDS=['SIN_VIN','SIN_COSTO','CXP','CXC_VENCIDA','CXC','SIN_VENDER_6M','SIN_VENDER_1A','DOCS'];
+  const ALERT_IDS=['SIN_VIN','SIN_COSTO','SIN_MARCA','SIN_MODELO','SIN_TIPO_VEH','SIN_COLOR','SIN_ANIO','CXP','CXC_VENCIDA','CXC','SIN_VENDER_6M','SIN_VENDER_1A','DOCS'];
   const seleccionadas=ALERT_IDS.filter(id=>{
     const el=document.getElementById('mn-'+id);
     return el&&el.checked;
@@ -6340,19 +6458,6 @@ function agregarSeguroConfig(){
 }
 
 // ══ EXPORTAR INVENTARIO PDF ══
-function exportarInventarioPDF(){
-  sincronizarStatusVehiculos();
-  const veh=DB.vehiculos;
-  const win=openPopup('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Inventario</title><style>body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2{font-size:18px;margin-bottom:4px}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#0f172a;color:#fff;padding:8px;text-align:left;font-size:11px}td{padding:8px;border-bottom:1px solid #e2e8f0}tr:nth-child(even){background:#f8fafc}.bg{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}.green{background:#dcfce7;color:#16a34a}.blue{background:#dbeafe;color:#2563eb}.amber{background:#fef3c7;color:#d97706}.purple{background:#ede9fe;color:#7c3aed}.gray{background:#f1f5f9;color:#6b7280}@media print{.noprint{display:none}}</style></head><body>'+
-  '<div style="display:flex;justify-content:space-between;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:16px"><div><h2>'+escHtml(DB.config.empresa||'DealerSystem')+'</h2><div style="color:#6b7280">LISTADO DE INVENTARIO — '+fmtDate(today())+'</div></div><div style="text-align:right;font-size:11px;color:#6b7280">Total: '+veh.length+' vehículos</div></div>'+
-  '<table><thead><tr><th>Código</th><th>Vehículo</th><th>Año</th><th>Color</th><th>VIN/Chasis</th><th>Propietario</th><th>Tipo Compra</th><th>Estado</th></tr></thead><tbody>'+
-  veh.map(v=>{const sc={ACTIVO:'green',VENDIDO:'blue',ADUANA:'amber','TRÁNSITO':'purple'};return'<tr><td style="font-family:monospace">'+escHtml(v.codigo||'—')+'</td><td>'+escHtml(v.marca)+' '+escHtml(v.modelo)+'</td><td>'+(v.anio||'—')+'</td><td>'+escHtml(v.color||'—')+'</td><td style="font-size:10px">'+escHtml(v.vin||'—')+'</td><td>'+escHtml(v.propietario||'—')+'</td><td>'+(v.tipoCompra==='IMPORTACION'?'Importación':v.tipoCompra==='LOCAL'?'Compra Local':'Recibido')+'</td><td><span class="bg '+(sc[v.status]||'gray')+'">'+(v.status||'—')+'</span></td></tr>';}).join('')+
-  '</tbody></table><div class="noprint" style="margin-top:20px;text-align:center"><button onclick="window.print()" style="padding:10px 24px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer">🖨️ Imprimir / PDF</button></div></body></html>');
-  // Cerrar ventana tras imprimir o al cerrar manualmente
-  win.onafterprint=()=>{ try{win.close();}catch(e){} };
-  win.addEventListener('focus',()=>{ window.focus(); });
-}
-
 // ══ GASTOS DE VEHÍCULO MÓDULO GLOBAL ══
 let gvehSelectedId=null;
 
@@ -6412,7 +6517,7 @@ function renderGastosVeh(){
           <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray)">Vehículo</label>
           <select id="gveh-filtro-veh" onchange="renderGastosVeh()" style="padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
             <option value="">Todos los vehículos</option>
-            ${DB.vehiculos.map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio||''} ${v.status==='VENDIDO'?'(VENDIDO)':''}</option>`).join('')}
+            ${DB.vehiculos.map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio||''}${v.color?' · '+escHtml(v.color):''} ${v.status==='VENDIDO'?'(VENDIDO)':''}</option>`).join('')}
           </select>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px">
@@ -6498,7 +6603,7 @@ function renderGastosVeh(){
           return`<tr onclick="selGVeh('${g.id}',this)" style="cursor:pointer">
             <td style="text-align:center"><input type="radio" name="gveh-sel" onclick="event.stopPropagation();selGVeh('${g.id}',this.closest('tr'))" style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue)"></td>
             <td style="font-size:12px">${fmtDate(g.fecha)}</td>
-            <td style="font-size:12px;font-weight:600">${v?escHtml(v.codigo+' '+v.marca+' '+v.modelo):'—'}</td>
+            <td style="font-size:12px;font-weight:600">${v?escHtml(v.codigo+' '+v.marca+' '+v.modelo+(v.anio?' '+v.anio:'')+(v.color?' · '+v.color:'')):'—'}</td>
             <td style="font-size:12px">${escHtml(g.suplidor||'—')}</td>
             <td><span class="badge badge-amber" style="font-size:11px">${escHtml(g._origen==='manual'?(g.descripcion||g.tipo||'—'):g.tipo||'—')}</span></td>
             <td style="font-size:12px">${escHtml(g.cuenta||'—')}</td>
@@ -6533,8 +6638,8 @@ function nuevoGastoVeh(){
         <div style="display:flex;gap:6px;align-items:center">
           <select id="ngv-veh" style="${DB.vehiculos.length===0?'border:2px solid var(--red)':''};flex:1">
             <option value="">${DB.vehiculos.length===0?'⚠️ No hay vehículos registrados':'Seleccionar vehículo...'}</option>
-            ${DB.vehiculos.filter(v=>v.status!=='VENDIDO').map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio}</option>`).join('')}
-            ${DB.vehiculos.filter(v=>v.status==='VENDIDO').length?`<option disabled>── Vendidos ──</option>${DB.vehiculos.filter(v=>v.status==='VENDIDO').map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio} (VENDIDO)</option>`).join('')}`:''}
+            ${DB.vehiculos.filter(v=>v.status!=='VENDIDO').map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio}${v.color?' · '+escHtml(v.color):''}</option>`).join('')}
+            ${DB.vehiculos.filter(v=>v.status==='VENDIDO').length?`<option disabled>── Vendidos ──</option>${DB.vehiculos.filter(v=>v.status==='VENDIDO').map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio}${v.color?' · '+escHtml(v.color):''} (VENDIDO)</option>`).join('')}`:''}
           </select>
         </div>
         ${DB.vehiculos.length===0?'<div style="color:var(--red);font-size:11px;margin-top:4px">⚠️ Debes registrar un vehículo antes de agregar gastos.</div>':''}
@@ -7032,7 +7137,7 @@ function _imprimirHojaCostosVeh(vid,tasa){
     .res-box{text-align:center;padding:12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff}
     .res-label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:6px}
     .res-val{font-size:17px;font-weight:900}
-    @media print{.noprint{display:none}body{padding:8px 12px}@page{size:letter portrait;margin:8mm}}
+    @media print{.noprint{display:none}body{padding:6px 10px}@page{size:letter portrait;margin:6mm}.veh-card{page-break-inside:avoid;padding:8px 12px;margin-bottom:8px}.veh-grid{gap:6px}.resumen{page-break-inside:avoid;padding:8px;margin-top:8px}.res-grid{gap:8px}.res-box{padding:8px}table{page-break-inside:auto}tr{page-break-inside:avoid}.section-title{page-break-after:avoid;margin:6px 0 3px}td{padding:3px 8px}th{padding:4px 8px}}
   </style></head><body>
   <div class="header">
     <div>
@@ -7060,6 +7165,7 @@ function _imprimirHojaCostosVeh(vid,tasa){
       <div class="veh-field"><label>Año</label><span>${escHtml(v.anio||'—')}</span></div>
       <div class="veh-field"><label>Color</label><span>${escHtml(v.color||'—')}</span></div>
       <div class="veh-field"><label>Chasis / VIN</label><span>${escHtml(v.vin||'—')}</span></div>
+      <div class="veh-field"><label>Tracción</label><span>${escHtml(v.traccion||'—')}</span></div>
       <div class="veh-field"><label>Estado</label><span style="background:#16a34a;color:#fff;padding:2px 10px;border-radius:10px;font-size:12px">${escHtml(v.status||'ACTIVO')}</span></div>
     </div>
   </div>
@@ -7120,6 +7226,11 @@ function _imprimirHojaCostosVeh(vid,tasa){
         <div class="res-label" style="color:#d97706">TOTAL GENERAL RD$</div>
         <div class="res-val" style="color:#d97706">${fmtN(totGenRD,false)}</div>
         ${pendGenRD>0?`<div style="font-size:11px;color:#dc2626;margin-top:4px;font-weight:700">Pendiente: ${fmtN(pendGenRD,false)}</div>`:`<div style="font-size:11px;color:#16a34a;margin-top:4px">✅ Todo pagado</div>`}
+        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e8c96e">
+          <div style="font-size:10px;color:#6b7280;font-weight:700">EQUIV. EN USD (tasa RD$ ${tasa})</div>
+          <div style="font-size:16px;font-weight:800;color:#2563eb">$${(totGenRD/tasa).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} USD</div>
+          ${pendGenRD>0?`<div style="font-size:10px;color:#7c3aed;margin-top:2px">Pendiente: $${(pendGenRD/tasa).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} USD</div>`:''}
+        </div>
       </div>
     </div>
   </div>
@@ -7226,7 +7337,7 @@ function _generarPDFGastosVeh(gastos,tasa,filtroSup,filtroVeh,soloUnVeh){
     <div class="res-grid">
       <div class="res-box"><div class="res-label">Total Facturado RD$</div><div class="res-val">${fmt(totFactRD)}</div></div>
       <div class="res-box"><div class="res-label">Total Facturado USD</div><div class="res-val" style="color:#2563eb">${fmtUSD(totFactUSD)}</div><div style="font-size:11px;color:#6b7280">≈ ${fmt(totFactUSD*tasa)}</div></div>
-      <div class="res-box" style="background:#fff3cd"><div class="res-label">TOTAL GENERAL RD$</div><div class="res-val" style="color:#d97706">${fmt(totGenRD)}</div></div>
+      <div class="res-box" style="background:#fff3cd"><div class="res-label">TOTAL GENERAL RD$</div><div class="res-val" style="color:#d97706">${fmt(totGenRD)}</div><div style="margin-top:5px;padding-top:5px;border-top:1px dashed #d97706;font-size:10px;color:#6b7280;font-weight:700">Equiv. USD (tasa ${tasa})</div><div style="font-size:14px;font-weight:800;color:#2563eb">$${(totGenRD/tasa).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
       <div class="res-box"><div class="res-label">Pendiente RD$</div><div class="res-val" style="color:#dc2626">${fmt(totPendRD)}</div></div>
       <div class="res-box"><div class="res-label">Pendiente USD</div><div class="res-val" style="color:#2563eb">${fmtUSD(totPendUSD)}</div><div style="font-size:11px;color:#6b7280">≈ ${fmt(totPendUSD*tasa)}</div></div>
       <div class="res-box" style="background:#fee2e2"><div class="res-label">TOTAL PENDIENTE RD$</div><div class="res-val" style="color:#dc2626">${fmt(totPendGenRD)}</div></div>
@@ -7326,6 +7437,7 @@ function renderVentas(){
             <td style="font-size:12px">
               <div style="font-weight:700">${escHtml(v.vehiculo||'—')}</div>
               <div style="font-size:10px;color:var(--blue);font-family:monospace;font-weight:700">${escHtml(v.codigo||'')}</div>
+              <div style="font-size:10px;color:var(--gray)">${escHtml(veh?.tipo||'')}${veh?.tipo&&veh?.color?' · ':''}${escHtml(veh?.color||'')}</div>
             </td>
             <td style="font-family:monospace;font-size:11px;color:var(--gray)">${escHtml(veh?.vin||'—')}</td>
             <td>
@@ -7526,7 +7638,7 @@ function nuevaVenta(){
       <div class="form-field"><label class="required">Vehículo</label>
         <select id="sv-veh" onchange="llenarInfoVenta(this.value)">
           <option value="">Seleccionar vehículo...</option>
-          ${vehDisp.map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio} [${v.status}]</option>`).join('')}
+          ${vehDisp.map(v=>`<option value="${v.id}">${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio}${v.color?' · '+escHtml(v.color):''} [${v.status}]</option>`).join('')}
         </select>
       </div>
       <div class="form-field"><label class="required">Cliente</label>
@@ -7677,10 +7789,9 @@ function nuevaVenta(){
         <div class="form-row c3" style="margin-bottom:8px">
           <div class="form-field" style="margin:0"><label style="font-size:10px">Marca / Modelo</label><input type="text" id="sv-rec-vehiculo" placeholder="Ej: Toyota Corolla 2018"></div>
           <div class="form-field" style="margin:0"><label style="font-size:10px">Chasis / VIN</label><input type="text" id="sv-rec-vin" placeholder="Número de chasis o VIN" maxlength="17" style="text-transform:uppercase;font-family:monospace" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"></div>
-          <div class="form-field" style="margin:0"><label style="font-size:10px">Kilometraje</label><input type="text" id="sv-rec-km" placeholder="0" oninput="fmtMoneyInput(this)" onblur="fmtMoneyBlur(this)" onfocus="fmtMoneyFocus(this)"></div>
+          <div class="form-field" style="margin:0"><label style="font-size:10px">Placa</label><input type="text" id="sv-rec-placa" placeholder="A000000" maxlength="7" style="text-transform:uppercase" oninput="fmtPlaca(this)"></div>
         </div>
         <div class="form-row c2" style="margin-bottom:0">
-          <div class="form-field" style="margin:0"><label style="font-size:10px">Monto Recibido</label><input type="text" id="sv-rec-monto" placeholder="0.00" oninput="fmtMoneyInput(this);calcPend()"></div>
           <div class="form-field" style="margin:0"><label style="font-size:10px">Adjuntar Matrícula</label>
             <input type="file" id="sv-rec-matricula" accept=".jpg,.jpeg,.png" onchange="previewFoto('sv-rec-matricula','sv-rec-mat-prev')">
             <img id="sv-rec-mat-prev" style="display:none;width:100%;max-height:60px;object-fit:cover;border-radius:4px;margin-top:4px">
@@ -7688,6 +7799,7 @@ function nuevaVenta(){
         </div>
       </div>
     </div>
+    <div style="font-size:11px;color:var(--gray);margin-top:6px">ℹ️ El valor del vehículo recibido se incluye directamente en el campo <strong>Inicial</strong> de arriba — no se registra por separado.</div>
     <div class="form-field" style="margin-top:10px"><label>💬 Comentario para la Factura</label>
       <textarea id="sv-comentario" rows="2" placeholder="Ej: Vehículo entregado en condiciones actuales. Sin garantía de piezas mecánicas..."></textarea>
     </div>`,
@@ -7703,8 +7815,13 @@ function selVenta(id,tr){
   const v=DB.ventas.find(x=>x.id===id);
   const actB=(bid,bg,c)=>{const b=document.getElementById(bid);if(b){b.disabled=false;b.style.cssText='background:'+bg+';color:'+c+';cursor:pointer;border:none;';}};
   actB('vta-btn-imprimir','#475569','#fff');
-  if(currentUser?.role==='admin'){
+  // CORREGIDO: antes solo el admin podía habilitar Editar/Eliminar aquí, aunque el
+  // botón se mostrara para usuarios con el permiso canDo('editar')/canDo('eliminar')
+  // — quedaban visibles pero deshabilitados. Ahora respeta el permiso real del usuario.
+  if(currentUser?.role==='admin'||canDo('editar')){
     actB('vta-btn-editar','#2563eb','#fff');
+  }
+  if(currentUser?.role==='admin'||canDo('eliminar')){
     actB('vta-btn-eliminar','#dc2626','#fff');
   }
 }
@@ -7980,9 +8097,8 @@ function llenarInfoVenta(vid){
 function calcPend(){
   const p=parseFloat((document.getElementById('sv-precio')?.value||'0').replace(/,/g,''));
   const i=parseFloat((document.getElementById('sv-inicial')?.value||'0').replace(/,/g,''));
-  const rec=parseFloat((document.getElementById('sv-rec-monto')?.value||'0').replace(/,/g,''));
   const pd=document.getElementById('sv-pendiente');
-  if(pd)pd.value=fmtMoneyDisplay(Math.max(0,p-i-rec));
+  if(pd)pd.value=fmtMoneyDisplay(Math.max(0,p-i));
   // Mostrar equivalente si es USD
   const moneda=document.getElementById('sv-moneda')?.value||'RD$';
   const tasa=parseFloat(document.getElementById('sv-tasa')?.value||DB.config.tasaCambio||60);
@@ -8009,8 +8125,7 @@ function confirmarVenta(nf){
   const cliNombre=cli?.nombre||'Cliente';
   const v=DB.vehiculos.find(x=>x.id===vid);
   const inicial=parseFloat((document.getElementById('sv-inicial').value||'0').replace(/,/g,''));
-  const montoRecibido=document.getElementById('sv-tiene-recibido')?.checked?parseFloat((document.getElementById('sv-rec-monto')?.value||'0').replace(/,/g,'')):0;
-  const pendiente=Math.max(0,precio-inicial-montoRecibido);
+  const pendiente=Math.max(0,precio-inicial);
   const banco=document.getElementById('sv-banco')?.value||'';
   const cuenta=document.getElementById('sv-cuenta')?.value||'Caja General';
   const monedaVenta=document.getElementById('sv-moneda')?.value||'RD$';
@@ -8061,10 +8176,9 @@ function confirmarVenta(nf){
     const matEl=document.getElementById('sv-rec-mat-prev');
     const recVehNombre=document.getElementById('sv-rec-vehiculo')?.value||'';
     const recVin=document.getElementById('sv-rec-vin')?.value||'';
-    const recKm=parseFloat((document.getElementById('sv-rec-km')?.value||'0').replace(/,/g,''))||0;
-    const recMonto=parseFloat((document.getElementById('sv-rec-monto')?.value||'0').replace(/,/g,''));
+    const recPlaca=document.getElementById('sv-rec-placa')?.value||'';
     const recMatricula=matEl?.style.display!=='none'&&matEl?.src?matEl.src:'';
-    venta.vehiculoRecibido={vehiculo:recVehNombre,vin:recVin,km:recKm,monto:recMonto,matricula:recMatricula};
+    venta.vehiculoRecibido={vehiculo:recVehNombre,vin:recVin,placa:recPlaca,matricula:recMatricula};
     // Registrar automáticamente como vehículo activo tipo RECIBIDO
     if(recVehNombre){
       // Parsear marca, modelo, año del texto libre
@@ -8086,15 +8200,15 @@ function confirmarVenta(nf){
           codigo:nuevoCodigo,
           marca,modelo,anio,
           vin:recVin,
-          millas:recKm,
+          millas:0,
           status:'ACTIVO',
           tipoCompra:'RECIBIDO',
           suplidor:cliNombre, // El cliente que lo entregó
-          costo:recMonto,     // El valor por el que se recibió
+          costo:0,
           fecha:venta.fecha,
           notas:`Recibido como parte de pago. Venta: ${nf} — Cliente: ${cliNombre}`,
           propietario:DB.config.propietarios?.[0]||'',
-          color:'',placa:'',carfax:'',foto:'',precioVenta:0,
+          color:'',placa:recPlaca||'',carfax:'',foto:'',precioVenta:0,
           origenVenta:nf // referencia a la venta de origen
         };
         DB.vehiculos.push(nuevoVeh);
@@ -8282,77 +8396,206 @@ function confirmarAbVenta(vid){
 function editarVenta(vid){
   if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar','error');return;}
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
-  const cuentas=DB.config.cuentas&&DB.config.cuentas.length?DB.config.cuentas:['Caja General'];
+  const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const bancoCuentas=DB.config.bancoCuentas||[];
-  openModal('✏️ Editar Venta — '+escHtml(v.factura),`
-    <div style="background:var(--blue3);border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;gap:16px;flex-wrap:wrap;font-size:12px">
-      <span>🚗 <strong>${escHtml(v.vehiculo||v.codigo||'')}</strong></span>
-      <span>👤 <strong>${escHtml(v.cliente||'')}</strong></span>
-      <span>📋 Factura: <strong>${escHtml(v.factura||'')}</strong></span>
+  // Cuentas del banco seleccionado
+  const cuentasIniciales=(()=>{
+    const b=bancoCuentas.find(x=>x.banco===v.banco)||bancoCuentas[0];
+    return b?(b.cuentas||[]).map(c=>`<option value="${escHtml(c.tipo+' — '+c.numero)}" ${v.cuenta===(c.tipo+' — '+c.numero)?'selected':''}>${escHtml(c.tipo)} — ${escHtml(c.numero)}</option>`).join(''):'<option value="Caja General">Caja General</option>';
+  })();
+  const tipoActual=v.tipoTransferencia||'endoso';
+
+  openModal('✏️ Editar Venta — '+escHtml(v.factura||''),`
+    <div style="background:var(--navy);color:#fff;padding:10px 14px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;font-weight:700">N° FACTURA</span>
+      <span style="font-family:monospace;font-size:16px;font-weight:800;color:#60a5fa">${escHtml(v.factura||'')}</span>
     </div>
-    <div class="form-row c3">
-      <div class="form-field"><label class="required">Precio de Venta</label>
-        <input type="text" id="ev-precio" value="${fmtMoneyDisplay(v.precioVenta||0)}"
-          oninput="fmtMoneyInput(this);(function(){const p=parseFloat(document.getElementById('ev-precio').value.replace(/,/g,'')||0);const i=parseFloat(document.getElementById('ev-inicial').value.replace(/,/g,'')||0);document.getElementById('ev-pendiente').value=fmtMoneyDisplay(Math.max(0,p-i));})()">
+    <!-- Vehículo y cliente (solo lectura en edición) -->
+    <div class="form-row c2">
+      <div class="form-field"><label>Vehículo</label>
+        <input type="text" value="${escHtml((v.codigo?v.codigo+' — ':'')+v.vehiculo||'')}" readonly style="background:#f8fafc;font-weight:700;color:var(--navy)">
       </div>
-      <div class="form-field"><label>Inicial Recibido</label>
-        <input type="text" id="ev-inicial" value="${fmtMoneyDisplay(v.inicial||0)}"
-          oninput="fmtMoneyInput(this);(function(){const p=parseFloat(document.getElementById('ev-precio').value.replace(/,/g,'')||0);const i=parseFloat(document.getElementById('ev-inicial').value.replace(/,/g,'')||0);document.getElementById('ev-pendiente').value=fmtMoneyDisplay(Math.max(0,p-i));})()">
-      </div>
-      <div class="form-field"><label>Pendiente</label>
-        <input type="text" id="ev-pendiente" value="${fmtMoneyDisplay(v.pendiente||0)}" readonly style="background:#f8fafc;color:var(--red);font-weight:700">
+      <div class="form-field"><label>Cliente</label>
+        <input type="text" value="${escHtml(v.cliente||'')}" readonly style="background:#f8fafc;font-weight:700;color:var(--navy)">
       </div>
     </div>
+    ${veh?`<div style="background:var(--blue3);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Chasis / VIN</div><div style="font-family:monospace;font-weight:800;color:var(--navy)">${escHtml(veh.vin||'SIN VIN')}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Color | Tipo</div><div>${escHtml(veh.color||'—')} | ${escHtml(veh.tipo||'—')}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Año</div><div>${veh.anio||'—'}</div></div>
+        <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Estado</div><div style="font-weight:800;color:var(--amber)">${veh.status||'—'}</div></div>
+      </div>
+    </div>`:''}
     <div class="form-row c3">
+      <div class="form-field"><label>Fecha de Venta</label><input type="date" id="ev-fecha" value="${v.fecha||''}"></div>
       <div class="form-field"><label>Método de Pago</label>
         <select id="ev-pago">${['Contado','Financiamiento','Transferencia','Cheque','Mixto'].map(p=>`<option ${p===v.metodoPago?'selected':''}>${p}</option>`).join('')}</select>
       </div>
-      <div class="form-field"><label>Moneda</label>
-        <select id="ev-moneda">
-          <option value="RD$" ${(v.moneda||'RD$')==='RD$'?'selected':''}>🇩🇴 RD$</option>
-          <option value="USD" ${v.moneda==='USD'?'selected':''}>🇺🇸 USD</option>
-        </select>
-      </div>
-      <div class="form-field"><label>Banco / Cuenta</label>
-        <select id="ev-banco">
-          ${bancoCuentas.length?bancoCuentas.flatMap(b=>b.cuentas&&b.cuentas.length?b.cuentas.map(ct=>`<option value="${escHtml(b.banco+' — '+ct.numero)}" ${(v.banco||v.cuenta||'')===(b.banco+' — '+ct.numero)?'selected':''}>${escHtml(b.banco+' — '+ct.numero)}</option>`):[`<option value="${escHtml(b.banco)}" ${(v.banco||'')=== b.banco?'selected':''}>${escHtml(b.banco)}</option>`]).join(''):cuentas.map(c=>`<option ${c===(v.cuenta||'')?'selected':''}>${escHtml(c)}</option>`).join('')}
+      <div class="form-field"><label>Banco</label>
+        <select id="ev-banco" onchange="evActualizarCuentas()">
+          ${bancoCuentas.map(b=>`<option value="${escHtml(b.banco)}" ${b.banco===v.banco?'selected':''}>${escHtml(b.banco)}</option>`).join('')||`<option value="Caja General">Caja General</option>`}
         </select>
       </div>
     </div>
-    <div class="form-row c3">
-      <div class="form-field"><label>Fecha de Venta</label>
-        <input type="date" id="ev-fecha" value="${v.fecha||''}">
+    <div class="form-row c2">
+      <div class="form-field"><label class="required">Cuenta de Cobro</label>
+        <select id="ev-cuenta">${cuentasIniciales}</select>
       </div>
+      <div class="form-field"><label>Moneda de Venta</label>
+        <select id="ev-moneda" onchange="evToggleTasa()">
+          <option value="RD$" ${(v.moneda||'RD$')==='RD$'?'selected':''}>RD$ — Pesos</option>
+          <option value="USD" ${v.moneda==='USD'?'selected':''}>USD — Dólares</option>
+        </select>
+      </div>
+    </div>
+    <div id="ev-tasa-wrap" style="display:${v.moneda==='USD'?'flex':'none'};gap:10px;margin-bottom:14px">
+      <div class="form-field" style="margin:0;flex:1"><label>💱 Tasa del Día (RD$ x USD)</label>
+        <input type="number" id="ev-tasa" step="0.01" value="${v.tasaCambio||DB.config.tasaCambio||60}" oninput="evCalcPend()">
+      </div>
+      <div class="form-field" style="margin:0;flex:1"><label>Equivalente en RD$</label>
+        <input type="text" id="ev-equiv" readonly style="background:#f8fafc;font-weight:700;color:var(--blue)" value="${v.moneda==='USD'?fmtMoneyDisplay((v.precioVenta||0)*(v.tasaCambio||DB.config.tasaCambio||60)):''}">
+      </div>
+    </div>
+    <div class="form-row c3">
+      <div class="form-field"><label class="required">Precio de Venta</label>
+        <input type="text" id="ev-precio" value="${fmtMoneyDisplay(v.precioVenta||0)}" oninput="fmtMoneyInput(this);evCalcPend()">
+      </div>
+      <div class="form-field"><label>Inicial Recibido</label>
+        <input type="text" id="ev-inicial" value="${fmtMoneyDisplay(v.inicial||0)}" oninput="fmtMoneyInput(this);evCalcPend()">
+      </div>
+      <div class="form-field"><label>Pendiente</label>
+        <input type="text" id="ev-pendiente" value="${fmtMoneyDisplay(v.pendiente||0)}" readonly style="background:#f8fafc;font-weight:700;color:var(--red)">
+      </div>
+    </div>
+    <div class="form-row c2">
       <div class="form-field"><label>Fecha de Entrega</label>
         <input type="date" id="ev-fecha-entrega" value="${v.fechaEntrega||''}">
       </div>
-      <div class="form-field"><label>Estado</label>
+      <div class="form-field"><label>Estado de Venta</label>
         <select id="ev-estado">
           <option value="TRÁNSITO" ${v.estadoVenta==='TRÁNSITO'?'selected':''}>🔄 Tránsito</option>
           <option value="VENDIDO" ${(v.estadoVenta||'VENDIDO')==='VENDIDO'?'selected':''}>✅ Vendido</option>
         </select>
       </div>
     </div>
-    <div class="form-row c2">
-      <div class="form-field"><label>Tipo Transferencia</label>
-        <select id="ev-tipo-transf">
-          <option value="" ${!v.tipoTransferencia?'selected':''}>Sin transferencia</option>
-          <option value="traspaso" ${v.tipoTransferencia==='traspaso'?'selected':''}>Traspaso</option>
-          <option value="endoso" ${v.tipoTransferencia==='endoso'?'selected':''}>Endoso</option>
-          <option value="placa_exhibicion" ${v.tipoTransferencia==='placa_exhibicion'?'selected':''}>Placa Exhibición</option>
+    <!-- Gestión de Titulación (igual que Nueva Venta) -->
+    <div style="background:var(--blue3);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:10px">📋 Gestión de Titulación</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button type="button" id="ev-btn-endoso" onclick="evSelTitulacion('endoso')"
+          style="flex:1;min-width:100px;padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;${tipoActual==='endoso'?'border:2px solid var(--blue);background:var(--blue);color:#fff':'border:2px solid var(--gray3);background:#fff;color:var(--navy)'}">
+          📋 Endoso<div style="font-size:10px;font-weight:400;margin-top:2px">Empresa paga placa</div>
+        </button>
+        <button type="button" id="ev-btn-traspaso" onclick="evSelTitulacion('traspaso')"
+          style="flex:1;min-width:100px;padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;${tipoActual==='traspaso'?'border:2px solid var(--blue);background:var(--blue);color:#fff':'border:2px solid var(--gray3);background:#fff;color:var(--navy)'}">
+          🔄 Traspaso<div style="font-size:10px;font-weight:400;margin-top:2px">Cliente paga matrícula</div>
+        </button>
+        <button type="button" id="ev-btn-sin" onclick="evSelTitulacion('sin')"
+          style="flex:1;min-width:100px;padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;${!tipoActual||tipoActual==='placa_exhibicion'?'border:2px solid var(--blue);background:var(--blue);color:#fff':'border:2px solid var(--gray3);background:#fff;color:var(--navy)'}">
+          ➖ Sin Titulación<div style="font-size:10px;font-weight:400;margin-top:2px">Solo venta directa</div>
+        </button>
+      </div>
+      <input type="hidden" id="ev-tipo-transf" value="${tipoActual}">
+      <!-- Gestor -->
+      <div id="ev-gestor-wrap" style="margin-bottom:10px;display:${tipoActual&&tipoActual!=='sin'?'block':'none'}">
+        <label style="font-size:10px;font-weight:700;color:var(--blue);display:block;margin-bottom:4px">👤 Gestor / Tramitador</label>
+        <select id="ev-gestor" style="width:100%;padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm)">
+          <option value="">-- Sin gestor --</option>
+          ${DB.suplidores.map(s=>`<option value="${escHtml(s.empresa||s.nombre||'')}" ${(v.gestorTransf||'')===(s.empresa||s.nombre||'')?'selected':''}>${escHtml(s.empresa||s.nombre||'')}</option>`).join('')}
         </select>
       </div>
-      <div class="form-field"><label>Gestor de Transferencia</label>
-        <input type="text" id="ev-gestor" value="${escHtml(v.gestorTransf||'')}" placeholder="Nombre del gestor">
+      <!-- Detalles Endoso -->
+      <div id="ev-endoso-wrap" style="display:${tipoActual==='endoso'?'block':'none'}">
+        <div class="form-row c2" style="margin-bottom:8px">
+          <div class="form-field" style="margin:0">
+            <label style="font-size:10px;font-weight:700">💰 Costo del Endoso</label>
+            <input type="text" id="ev-endoso-monto" value="${fmtMoneyDisplay(v.montoEndoso||0)}" oninput="fmtMoneyInput(this)" onblur="fmtMoneyBlur(this)" onfocus="fmtMoneyFocus(this)">
+          </div>
+          <div class="form-field" style="margin:0">
+            <label style="font-size:10px;font-weight:700">📋 Fecha Placa Exhibición (DGII)</label>
+            <input type="date" id="ev-fecha-placa-exhibicion" value="${v.fechaPlacaExhibicion||''}">
+            <div style="font-size:10px;color:var(--amber);margin-top:2px">⚠️ Vence a los <strong>90 días</strong></div>
+          </div>
+        </div>
+      </div>
+      <!-- Detalles Traspaso -->
+      <div id="ev-traspaso-wrap" style="display:${tipoActual==='traspaso'?'block':'none'}">
+        <div class="form-row c2" style="margin-bottom:6px">
+          <div class="form-field" style="margin:0">
+            <label style="font-size:10px;font-weight:700">💰 Costo del Traspaso / Matrícula</label>
+            <input type="text" id="ev-traspaso-monto" value="${fmtMoneyDisplay(v.montoTraspaso||0)}" oninput="fmtMoneyInput(this)" onblur="fmtMoneyBlur(this)" onfocus="fmtMoneyFocus(this)">
+          </div>
+          <div class="form-field" style="margin:0">
+            <label style="font-size:10px;font-weight:700">¿El cliente pagó el traspaso?</label>
+            <select id="ev-traspaso-pagado" style="width:100%;padding:7px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm)">
+              <option value="si" ${v.traspasoPagado!==false?'selected':''}>✅ Sí, el cliente pagó</option>
+              <option value="no" ${v.traspasoPagado===false?'selected':''}>❌ No, quedó pendiente (CxC)</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="form-field"><label>Comentario / Notas</label>
-      <input type="text" id="ev-motivo" value="${escHtml(v.comentario||v.motivoTransito||'')}">
+    <!-- Vehículo recibido -->
+    ${v.vehiculoRecibido?.vehiculo?`
+    <div style="background:var(--gray2);border-radius:8px;padding:12px;margin-top:8px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:8px">🔄 Vehículo Recibido como Parte de Pago</div>
+      <div class="form-row c3" style="margin-bottom:0">
+        <div class="form-field" style="margin:0"><label style="font-size:10px">Marca / Modelo</label><input type="text" id="ev-rec-vehiculo" value="${escHtml(v.vehiculoRecibido.vehiculo||'')}"></div>
+        <div class="form-field" style="margin:0"><label style="font-size:10px">Chasis / VIN</label><input type="text" id="ev-rec-vin" value="${escHtml(v.vehiculoRecibido.vin||'')}" style="text-transform:uppercase;font-family:monospace" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"></div>
+        <div class="form-field" style="margin:0"><label style="font-size:10px">Placa</label><input type="text" id="ev-rec-placa" value="${escHtml(v.vehiculoRecibido.placa||'')}" maxlength="7" style="text-transform:uppercase" oninput="fmtPlaca(this)"></div>
+      </div>
+    </div>`:''}
+    <div class="form-field" style="margin-top:10px"><label>💬 Comentario / Notas</label>
+      <textarea id="ev-motivo" rows="2">${escHtml(v.comentario||v.motivoTransito||'')}</textarea>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
      <button class="btn btn-sm" style="background:var(--green2);color:var(--green)" onclick="closeModal();imprimirFactura('${vid}')">🖨️ Imprimir</button>
      <button class="btn btn-primary" onclick="guardarEditarVenta('${vid}')">💾 Guardar Cambios</button>`);
 }
+// Funciones auxiliares del formulario de Editar Venta (espejo de Nueva Venta)
+function evActualizarCuentas(){
+  const bancoEl=document.getElementById('ev-banco');
+  const cuentaEl=document.getElementById('ev-cuenta');
+  if(!bancoEl||!cuentaEl)return;
+  const bcs=DB.config.bancoCuentas||[];
+  const b=bcs.find(x=>x.banco===bancoEl.value);
+  cuentaEl.innerHTML=(b?b.cuentas:[]).map(c=>`<option value="${escHtml(c.tipo+' — '+c.numero)}">${escHtml(c.tipo)} — ${escHtml(c.numero)}</option>`).join('')||'<option value="Caja General">Caja General</option>';
+}
+function evToggleTasa(){
+  const m=document.getElementById('ev-moneda')?.value||'RD$';
+  const w=document.getElementById('ev-tasa-wrap');
+  if(w)w.style.display=m==='USD'?'flex':'none';
+  evCalcPend();
+}
+function evCalcPend(){
+  const p=parseFloat((document.getElementById('ev-precio')?.value||'0').replace(/,/g,''));
+  const i=parseFloat((document.getElementById('ev-inicial')?.value||'0').replace(/,/g,''));
+  const pd=document.getElementById('ev-pendiente');
+  if(pd)pd.value=fmtMoneyDisplay(Math.max(0,p-i));
+  const m=document.getElementById('ev-moneda')?.value;
+  if(m==='USD'){const t=parseFloat(document.getElementById('ev-tasa')?.value||DB.config.tasaCambio||60);const eq=document.getElementById('ev-equiv');if(eq)eq.value=fmtMoneyDisplay(p*t);}
+}
+function evSelTitulacion(tipo){
+  const activeStyle='border:2px solid var(--blue);background:var(--blue);color:#fff';
+  const inactiveStyle='border:2px solid var(--gray3);background:#fff;color:var(--navy)';
+  const base='flex:1;min-width:100px;padding:10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;';
+  const btnE=document.getElementById('ev-btn-endoso');
+  const btnT=document.getElementById('ev-btn-traspaso');
+  const btnS=document.getElementById('ev-btn-sin');
+  if(btnE)btnE.style.cssText=base+(tipo==='endoso'?activeStyle:inactiveStyle);
+  if(btnT)btnT.style.cssText=base+(tipo==='traspaso'?activeStyle:inactiveStyle);
+  if(btnS)btnS.style.cssText=base+(tipo==='sin'?activeStyle:inactiveStyle);
+  const endosoWrap=document.getElementById('ev-endoso-wrap');
+  const traspasoWrap=document.getElementById('ev-traspaso-wrap');
+  const gestorWrap=document.getElementById('ev-gestor-wrap');
+  const tipoInput=document.getElementById('ev-tipo-transf');
+  if(endosoWrap)endosoWrap.style.display=tipo==='endoso'?'block':'none';
+  if(traspasoWrap)traspasoWrap.style.display=tipo==='traspaso'?'block':'none';
+  if(gestorWrap)gestorWrap.style.display=tipo!=='sin'?'block':'none';
+  if(tipoInput)tipoInput.value=tipo==='sin'?'':tipo;
+}
+function toggleEditTransfFields(){evSelTitulacion(document.getElementById('ev-tipo-transf')?.value||'endoso');}
 
 function guardarEditarVenta(vid){
   if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar cotizaciones','error');return;}
@@ -8362,6 +8605,7 @@ function guardarEditarVenta(vid){
   const pendiente=Math.max(0,precio-inicial);
   const fechaEntrega=document.getElementById('ev-fecha-entrega')?.value||'';
   const estadoVenta=document.getElementById('ev-estado').value;
+  const tipoTransferencia=document.getElementById('ev-tipo-transf')?.value||'';
   DB.ventas[i].precioVenta=precio;
   DB.ventas[i].inicial=inicial;
   DB.ventas[i].pendiente=pendiente;
@@ -8370,19 +8614,36 @@ function guardarEditarVenta(vid){
   DB.ventas[i].metodoPago=document.getElementById('ev-pago').value;
   DB.ventas[i].moneda=document.getElementById('ev-moneda')?.value||DB.ventas[i].moneda||'RD$';
   DB.ventas[i].banco=document.getElementById('ev-banco')?.value||DB.ventas[i].banco||'';
+  DB.ventas[i].cuenta=document.getElementById('ev-cuenta')?.value||DB.ventas[i].cuenta||'';
+  DB.ventas[i].tasaCambio=parseFloat(document.getElementById('ev-tasa')?.value||DB.config.tasaCambio||60);
   DB.ventas[i].fecha=document.getElementById('ev-fecha').value;
   DB.ventas[i].fechaEntrega=fechaEntrega;
-  DB.ventas[i].tipoTransferencia=document.getElementById('ev-tipo-transf')?.value||'';
-  DB.ventas[i].gestorTransf=document.getElementById('ev-gestor')?.value.trim()||'';
-  DB.ventas[i].comentario=document.getElementById('ev-motivo').value;
-  DB.ventas[i].motivoTransito=document.getElementById('ev-motivo').value;
+  DB.ventas[i].tipoTransferencia=tipoTransferencia;
+  DB.ventas[i].montoTraspaso=tipoTransferencia==='traspaso'?parseFloat((document.getElementById('ev-traspaso-monto')?.value||'0').replace(/,/g,'')):(DB.ventas[i].montoTraspaso||0);
+  DB.ventas[i].montoEndoso=tipoTransferencia==='endoso'?parseFloat((document.getElementById('ev-endoso-monto')?.value||'0').replace(/,/g,'')):(DB.ventas[i].montoEndoso||0);
+  DB.ventas[i].fechaPlacaExhibicion=tipoTransferencia==='endoso'?(document.getElementById('ev-fecha-placa-exhibicion')?.value||''):(DB.ventas[i].fechaPlacaExhibicion||'');
+  DB.ventas[i].gestorTransf=document.getElementById('ev-gestor')?.value||'';
+  DB.ventas[i].comentario=(document.getElementById('ev-motivo')?.value||'');
+  DB.ventas[i].motivoTransito=DB.ventas[i].comentario;
+  // Vehículo recibido — solo datos, NO se re-registra como activo
+  if(DB.ventas[i].vehiculoRecibido?.vehiculo){
+    const recEl=document.getElementById('ev-rec-vehiculo');
+    if(recEl){
+      DB.ventas[i].vehiculoRecibido={
+        ...DB.ventas[i].vehiculoRecibido,
+        vehiculo:recEl.value||DB.ventas[i].vehiculoRecibido.vehiculo,
+        vin:document.getElementById('ev-rec-vin')?.value||DB.ventas[i].vehiculoRecibido.vin||'',
+        placa:document.getElementById('ev-rec-placa')?.value||DB.ventas[i].vehiculoRecibido.placa||''
+      };
+    }
+  }
   // Actualizar CXC
   const ci=DB.cxc.findIndex(x=>x.ventaId===vid);
   if(ci>=0){DB.cxc[ci].saldo=pendiente;DB.cxc[ci].abonado=inicial;DB.cxc[ci].status=pendiente<=0?'SALDADO':inicial>0?'PARCIAL':'PENDIENTE';sDB('cxc');}
-  // Actualizar vehículo
+  // NO se toca el status del vehículo en Registro — solo se guarda fecha de entrega si la ingresaron
   const vi=DB.vehiculos.findIndex(x=>x.id===DB.ventas[i].vehiculoId);
-  if(vi>=0){DB.vehiculos[vi].status=estadoVenta==='VENDIDO'?'VENDIDO':'TRÁNSITO';if(fechaEntrega)DB.vehiculos[vi].fechaEntrega=fechaEntrega;sDB('vehiculos');}
-  // Verificar auto-vendido
+  if(vi>=0&&fechaEntrega){DB.vehiculos[vi].fechaEntrega=fechaEntrega;sDB('vehiculos');}
+  // Paso automático a VENDIDO (pago completo + entrega) — lógica normal sin cambios
   checkAutoVendido(vid);
   sDB('ventas');closeModal();toast('Venta actualizada ✓','success');renderVentas();
 }
@@ -8451,11 +8712,9 @@ function imprimirFactura(vid){
       .page{padding:12px;max-width:100%}
       .copy-wrap{page-break-inside:avoid}
       .copy-divider{border-top:2px dashed #94a3b8;margin:10px 0 8px}
+      @page{size:letter portrait;margin:10mm}
     }
   </style></head><body>
-  <div class="np" style="text-align:center;padding:10px 0 4px;font-size:12px;color:#6b7280">
-    Se imprimirán <strong>2 copias</strong> en una sola hoja — una para el cliente y otra para la empresa.
-  </div>
   <div class="page">
 
   <!-- ENCABEZADO -->
@@ -8493,6 +8752,7 @@ function imprimirFactura(vid){
   <div class="sec">
     <div class="sec-titulo">🚗 Datos del Vehículo Vendido</div>
     <div class="g3">
+      <div class="campo"><label>Código</label><span class="mono">${escHtml(v.codigo||veh?.codigo||'—')}</span></div>
       <div class="campo"><label>Marca / Modelo</label><span>${escHtml(v.vehiculo||'—')}</span></div>
       <div class="campo"><label>Chasis / VIN</label><span class="mono">${escHtml(veh?.vin||'—')}</span></div>
       <div class="campo"><label>Año</label><span>${veh?.anio||'—'}</span></div>
@@ -8510,8 +8770,7 @@ function imprimirFactura(vid){
       <div class="rec-grid">
         <div class="campo"><label>Marca / Modelo</label><span>${escHtml(rec.vehiculo)}</span></div>
         <div class="campo"><label>Chasis / VIN</label><span class="mono">${escHtml(rec.vin||'—')}</span></div>
-        <div class="campo"><label>Kilometraje</label><span>${rec.km?Number(rec.km).toLocaleString()+' km':'—'}</span></div>
-        <div class="campo"><label>Valor Recibido</label><span style="color:#16a34a;font-weight:800">${fmt(rec.monto||0)}</span></div>
+        <div class="campo"><label>Placa</label><span class="mono">${escHtml(rec.placa||'—')}</span></div>
       </div>
     </div>
   </div>`:''}
@@ -8525,8 +8784,7 @@ function imprimirFactura(vid){
         const fV=(n)=>esUSD?'USD $'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):'RD$ '+parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
         return`
         <tr><td class="lbl">Precio de Venta</td><td class="val">${fV(v.precioVenta)}</td></tr>
-        <tr><td class="lbl">Inicial Recibido</td><td class="val" style="color:#16a34a">${fV(v.inicial||0)}</td></tr>
-        ${rec?.vehiculo?`<tr><td class="lbl">Vehículo Recibido — ${escHtml(rec.vehiculo)}</td><td class="val" style="color:#16a34a">${fV(rec.monto||0)}</td></tr>`:''}
+        <tr><td class="lbl">Inicial Recibido${rec?.vehiculo?' (incluye vehículo recibido)':''}</td><td class="val" style="color:#16a34a">${fV(v.inicial||0)}</td></tr>
         ${parseFloat(v.pendiente||0)>0
           ?`<tr class="fin-pend"><td>⚠️ PENDIENTE POR COBRAR</td><td class="val">${fV(v.pendiente)}</td></tr>`
           :`<tr class="fin-total"><td>✅ PAGADO COMPLETAMENTE</td><td class="val">${fV(v.precioVenta)}</td></tr>`}`;
@@ -8563,68 +8821,7 @@ function imprimirFactura(vid){
     <button onclick="window.print()" style="padding:10px 28px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:700">🖨️ Imprimir / Guardar PDF</button>
   </div>
 
-  </div><!-- fin copia cliente -->
-
-  <!-- LÍNEA DE CORTE -->
-  <div style="padding:0 32px">
-    <hr class="copy-divider">
-    <div class="copy-label">📋 Copia — Empresa</div>
-  </div>
-
-  <!-- SEGUNDA COPIA: EMPRESA -->
-  <div class="page copy-wrap" style="padding-top:8px">
-    <div class="hdr">
-      <div class="hdr-logo">
-        ${logo?`<img src="${logo}" class="logo-img" alt="Logo">`:`<div class="logo-placeholder">${escHtml((DB.config.empresa||'D')[0])}</div>`}
-        <div>
-          <div class="empresa-nombre">${escHtml(DB.config.empresa||'DealerSystem')}</div>
-          ${DB.config.rnc?`<div class="empresa-rnc">RNC: ${escHtml(DB.config.rnc)}</div>`:''}
-          ${DB.config.direccion?`<div class="empresa-sub">${escHtml(DB.config.direccion)}</div>`:''}
-        </div>
-      </div>
-      <div class="hdr-titulo">
-        <div class="titulo-doc">Contrato de Venta</div>
-        <div class="titulo-sub">${escHtml(v.factura||'')}</div>
-        <div class="titulo-fecha">📅 ${fmtDate(v.fecha)}</div>
-        <div style="font-size:10px;font-weight:800;color:#dc2626;margin-top:4px;text-transform:uppercase;letter-spacing:1px">Copia Empresa</div>
-      </div>
-    </div>
-    <div class="sec">
-      <div class="sec-titulo">👤 Cliente</div>
-      <div class="g2">
-        <div class="campo"><label>Nombre</label><span>${escHtml(v.cliente||'—')}</span></div>
-        <div class="campo"><label>Cédula / Doc</label><span class="mono">${escHtml(cli?.documento||'—')}</span></div>
-        <div class="campo"><label>Teléfono</label><span>${escHtml(cli?.telefono||cli?.telefono2||'—')}</span></div>
-        <div class="campo"><label>Ciudad</label><span>${escHtml(cli?.ciudad||'—')}</span></div>
-      </div>
-    </div>
-    <div class="sec">
-      <div class="sec-titulo">🚗 Vehículo</div>
-      <div class="g3">
-        <div class="campo"><label>Descripción</label><span>${escHtml(v.vehiculo||'—')}</span></div>
-        <div class="campo"><label>Código</label><span class="mono">${escHtml(v.codigo||'—')}</span></div>
-        <div class="campo"><label>Chasis (VIN)</label><span class="mono" style="font-size:10px">${escHtml(veh?.vin||'—')}</span></div>
-        <div class="campo"><label>Color</label><span>${escHtml(veh?.color||'—')}</span></div>
-        <div class="campo"><label>Año</label><span>${escHtml(String(veh?.anio||'—'))}</span></div>
-        <div class="campo"><label>Placa</label><span class="mono">${escHtml(veh?.placa||'—')}</span></div>
-      </div>
-    </div>
-    <div class="sec">
-      <div class="sec-titulo">💰 Financiero</div>
-      <table class="fin-tabla">
-        <tr><td class="lbl">Precio de Venta</td><td class="val">${v.moneda==='USD'?fmtUSD(v.precioVenta):fmt(v.precioVenta)}</td></tr>
-        <tr><td class="lbl">Inicial Recibido</td><td class="val">${v.moneda==='USD'?fmtUSD(v.inicial||0):fmt(v.inicial||0)}</td></tr>
-        <tr class="fin-pend"><td class="lbl" style="color:#dc2626;font-weight:800">Saldo Pendiente</td><td class="val">${v.moneda==='USD'?fmtUSD(v.pendiente||0):fmt(v.pendiente||0)}</td></tr>
-        <tr><td class="lbl">Método de Pago</td><td class="val">${escHtml(v.metodoPago||'—')}</td></tr>
-        <tr><td class="lbl">Tipo Transferencia</td><td class="val">${escHtml(v.tipoTransferencia||'—')}</td></tr>
-      </table>
-    </div>
-    <div class="firmas">
-      <div class="firma-item"><div class="firma-linea">Firma del Cliente</div><div class="firma-nombre">${escHtml(v.cliente||'')}</div></div>
-      <div class="firma-item"><div class="firma-linea">Autorizado por</div><div class="firma-nombre">${escHtml(DB.config.empresa||'')}</div></div>
-    </div>
-    <div class="pie">${escHtml(DB.config.empresa||'')} | ${escHtml(DB.config.direccion||'')} | Tel: ${escHtml(DB.config.telefono||'')} | ${fmtDate(today())}</div>
-  </div><!-- fin copia empresa -->
+  </div><!-- fin factura -->
 
   </body></html>`);
   win.document.close();
@@ -8733,12 +8930,17 @@ function renderClientes(){
   document.getElementById('page-clientes').innerHTML=`
     <div class="page-header">
       <div><h1>👤 Clientes</h1><p>${DB.clientes.length} cliente(s) registrado(s)</p></div>
-      <button class="btn btn-primary" onclick="nuevoCliente()">➕ Nuevo Cliente</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="clientesSelAll()">☑️ Seleccionar Todos</button>
+        <button class="btn btn-secondary btn-sm" onclick="exportarClientesPDF()">📄 Exportar PDF</button>
+        <button class="btn btn-primary" onclick="nuevoCliente()">➕ Nuevo Cliente</button>
+      </div>
     </div>
     <div class="card">
-      <div class="search-wrap"><input class="search-input" placeholder="Buscar por nombre, documento, teléfono, ciudad..." oninput="filterTable('cli-tbl',this.value)"></div>
+      <div class="search-wrap"><input class="search-input" id="cli-busqueda" placeholder="Buscar por nombre, documento, teléfono, ciudad..." oninput="filterTable('cli-tbl',this.value)"></div>
       <div class="table-wrap"><table id="cli-tbl">
         <thead><tr>
+          <th style="width:36px"><input type="checkbox" id="cli-chk-all" onchange="clientesSelAll(this.checked)" style="width:15px;height:15px;cursor:pointer"></th>
           <th>Nombre</th>
           <th>Documento</th>
           <th>Teléfono</th>
@@ -8751,6 +8953,7 @@ function renderClientes(){
         <tbody>${DB.clientes.map((c,i)=>{
           const compras=DB.ventas.filter(v=>v.clienteId===c.id).length;
           return`<tr>
+            <td><input type="checkbox" class="cli-chk" value="${c.id}" style="width:15px;height:15px;cursor:pointer"></td>
             <td><div style="font-weight:700">${escHtml(c.nombre)}</div><div style="font-size:11px;color:var(--gray)">${escHtml(c.direccion||'')}</div></td>
             <td style="font-size:12px"><span class="badge badge-gray" style="font-size:10px">${escHtml(c.tipoDoc||'Cédula')}</span><br><span style="font-family:monospace">${escHtml(c.documento||'—')}</span></td>
             <td style="font-size:13px"><div>${escHtml(c.telefono||'—')}</div>${c.telefono2?`<div style="font-size:11px;color:var(--gray)">${escHtml(c.telefono2)}</div>`:''}</td>
@@ -8763,10 +8966,73 @@ function renderClientes(){
               ${(currentUser?.role==='admin'||canDo('eliminar'))?`<button class="btn btn-sm" style="background:var(--red2);color:var(--red);padding:4px 8px" onclick="eliminarCliente(${i})" title="Eliminar">🗑</button>`:''}
             </div></td>
           </tr>`;
-        }).join('')||'<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--gray)">Sin clientes registrados</td></tr>'}
+        }).join('')||'<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--gray)">Sin clientes registrados</td></tr>'}
         </tbody>
       </table></div>
     </div>`;
+}
+function clientesSelAll(checked){
+  const chkAll=document.getElementById('cli-chk-all');
+  const chks=document.querySelectorAll('.cli-chk');
+  const val=checked!==undefined?checked:(chkAll?chkAll.checked:true);
+  chks.forEach(c=>c.checked=val);
+  if(chkAll&&checked===undefined)chkAll.checked=val;
+}
+function exportarClientesPDF(){
+  const selIds=new Set([...document.querySelectorAll('.cli-chk:checked')].map(c=>c.value));
+  const textoBusqueda=(document.getElementById('cli-busqueda')?.value||'').toLowerCase();
+  let clientes=DB.clientes;
+  // Si hay seleccionados, exportar solo esos; si no, exportar los visibles según el buscador
+  if(selIds.size>0){
+    clientes=clientes.filter(c=>selIds.has(c.id));
+  } else if(textoBusqueda){
+    clientes=clientes.filter(c=>[c.nombre,c.documento,c.telefono,c.ciudad,c.provincia].join(' ').toLowerCase().includes(textoBusqueda));
+  }
+  const logo=DB.config.logoData||'';
+  const win=openPopup(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Clientes</title>
+  <style>
+    @page{size:letter landscape;margin:8mm}
+    body{font-family:Arial,sans-serif;padding:12px;font-size:11px}
+    h2{font-size:15px;margin:0}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:10px}
+    td{padding:5px 8px;border-bottom:1px solid #e2e8f0}
+    tr:nth-child(even){background:#f8fafc}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #7c3aed;padding-bottom:10px;margin-bottom:12px}
+    @media print{.noprint{display:none}}
+  </style></head><body>
+  <div class="hdr">
+    <div>
+      ${logo?`<img src="${logo}" style="max-height:40px;margin-bottom:6px;display:block" alt="">`:''}
+      <h2>${escHtml(DB.config.empresa||'DealerSystem')}</h2>
+      <div style="color:#6b7280;font-size:11px">LISTADO DE CLIENTES — ${fmtDate(today())}</div>
+      ${selIds.size>0?`<div style="color:#7c3aed;font-size:10px;margin-top:2px">${selIds.size} cliente(s) seleccionado(s)</div>`:textoBusqueda?`<div style="color:#6b7280;font-size:10px;margin-top:2px">Búsqueda: "${escHtml(textoBusqueda)}"</div>`:''}
+    </div>
+    <div style="text-align:right;font-size:11px;color:#6b7280">${clientes.length} cliente(s)</div>
+  </div>
+  <table><thead><tr>
+    <th>Nombre</th><th>Tipo Doc</th><th>Documento</th><th>Teléfono</th><th>Ciudad / Provincia</th><th>Ingresos</th><th>Referencia</th><th>Compras</th>
+  </tr></thead><tbody>
+  ${clientes.map(c=>{
+    const compras=DB.ventas.filter(v=>v.clienteId===c.id).length;
+    return`<tr>
+      <td style="font-weight:700">${escHtml(c.nombre)}<br><span style="font-size:10px;color:#6b7280;font-weight:400">${escHtml(c.direccion||'')}</span></td>
+      <td style="font-size:10px">${escHtml(c.tipoDoc||'Cédula')}</td>
+      <td style="font-family:monospace;font-size:10px">${escHtml(c.documento||'—')}</td>
+      <td>${escHtml(c.telefono||'—')}${c.telefono2?`<br><span style="font-size:10px;color:#6b7280">${escHtml(c.telefono2)}</span>`:''}</td>
+      <td>${escHtml(c.ciudad||'—')}${c.provincia?`<br><span style="font-size:10px;color:#6b7280">${escHtml(c.provincia)}</span>`:''}</td>
+      <td style="font-weight:700;color:#16a34a">${c.ingresos?fmt(c.ingresos):'—'}</td>
+      <td style="font-size:10px">${escHtml(c.refNombre||'—')}${c.refTel?`<br>${escHtml(c.refTel)}`:''}</td>
+      <td style="text-align:center;font-weight:700;color:${compras>0?'#16a34a':'#6b7280'}">${compras}</td>
+    </tr>`;
+  }).join('')}
+  </tbody></table>
+  <div class="noprint" style="margin-top:20px;text-align:center">
+    <button onclick="window.print()" style="padding:10px 24px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:700">🖨️ Imprimir / PDF</button>
+  </div>
+  </body></html>`);
+  win.onafterprint=()=>{try{win.close();}catch(e){}};
+  win.addEventListener('focus',()=>{window.focus();});
 }
 function nuevoCliente(){openModal('Nuevo Cliente',formCliente(null),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarCliente()">💾 Guardar</button>`);}
 function editarCliente(i){openModal('Editar Cliente',formCliente(DB.clientes[i]),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarCliente(${i})">💾 Actualizar</button>`);}
@@ -9744,7 +10010,7 @@ function renderCXP(){
         <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--gray);display:block;margin-bottom:5px">🚗 Filtrar por Vehículo</label>
         <select id="cxp-filtro-veh" onchange="renderCXP()" style="width:100%;padding:7px 10px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
           <option value="">Todos los vehículos</option>
-          ${DB.vehiculos.filter(v=>(DB.gastosVehiculos||[]).some(g=>g.vehiculoId===v.id&&parseFloat(g.montoPendiente||0)>0)).map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)}</option>`).join('')}
+          ${DB.vehiculos.filter(v=>(DB.gastosVehiculos||[]).some(g=>g.vehiculoId===v.id&&parseFloat(g.montoPendiente||0)>0)).map(v=>`<option value="${v.id}" ${v.id===filtroVeh?'selected':''}>${escHtml(v.codigo)} — ${escHtml(v.marca)} ${escHtml(v.modelo)} ${v.anio||''}${v.color?' · '+escHtml(v.color):''}</option>`).join('')}
         </select>
       </div>
       <div style="display:flex;flex-direction:column;gap:5px">
@@ -9794,7 +10060,7 @@ function renderCXP(){
           const vinMatch=tipoTxt.match(/VIN[.# :-]*([A-HJ-NPR-Z0-9]{5,17})/i);
           const vinFinal=v?v.vin:(g.vin||'')|| (vinMatch?vinMatch[1]:'');
           let nombreVeh='';
-          if(v) nombreVeh=v.marca+' '+v.modelo+(v.anio?' '+v.anio:'');
+          if(v) nombreVeh=(v.codigo?v.codigo+' — ':'')+v.marca+' '+v.modelo+(v.anio?' '+v.anio:'')+(v.color?' · '+v.color:'')+(v.tipo?' · '+v.tipo:'');
           else if(g.vehiculo&&g.vehiculo!=='MANUAL') nombreVeh=g.vehiculo;
           else if(g._origen!=='manual'&&tipoTxt&&tipoTxt!=='MANUAL'){
             const txtLimpio=tipoTxt.replace(/VIN[.# :-]*[A-HJ-NPR-Z0-9]{5,17}/gi,'').replace(/\s+/g,' ').trim();
@@ -10309,7 +10575,7 @@ function imprimirCXP(){
     const v=DB.vehiculos.find(x=>x.id===g.vehiculoId);
     const fV=(n)=>esUSD?'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
     const sc={ABONADO:'a',PENDIENTE:'r'};
-    return`<tr><td>${fmtDate(g.fecha)}</td><td style="font-weight:700">${escHtml(g.suplidor||'—')}</td><td>${v?escHtml(v.codigo+' '+v.marca+' '+v.modelo):'—'}</td><td style="font-family:monospace;font-size:10px">${escHtml(g.nroFactura||'—')}</td><td>${escHtml(g.tipo||g.descripcion||'—')}</td><td style="font-weight:700">${fV(g.montoFactura||0)}</td><td style="color:#16a34a">${fV(g.montoPagado||0)}</td><td style="font-weight:800;color:#dc2626">${fV(g.montoPendiente||0)}</td><td><span class="badge ${sc[g.statusGasto||'PENDIENTE']||'r'}">${g.statusGasto||'PENDIENTE'}</span></td></tr>`;
+    return`<tr><td>${fmtDate(g.fecha)}</td><td style="font-weight:700">${escHtml(g.suplidor||'—')}</td><td>${v?escHtml(v.codigo+' '+v.marca+' '+v.modelo+(v.anio?' '+v.anio:'')+(v.color?' · '+v.color:'')):'—'}</td><td style="font-family:monospace;font-size:10px">${escHtml(g.nroFactura||'—')}</td><td>${escHtml(g.tipo||g.descripcion||'—')}</td><td style="font-weight:700">${fV(g.montoFactura||0)}</td><td style="color:#16a34a">${fV(g.montoPagado||0)}</td><td style="font-weight:800;color:#dc2626">${fV(g.montoPendiente||0)}</td><td><span class="badge ${sc[g.statusGasto||'PENDIENTE']||'r'}">${g.statusGasto||'PENDIENTE'}</span></td></tr>`;
   }).join('');
   const win=openPopup(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CxP — ${escHtml(empresa)}</title>
   <style>
@@ -10541,7 +10807,7 @@ function renderCXC(){
           <td style="text-align:center"><input type="radio" name="cxc-sel" onclick="event.stopPropagation();selCXC('${x.id}',this.closest('tr'))" style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue)"></td>
           <td><div style="font-family:monospace;font-size:11px;font-weight:700;color:var(--blue)">${escHtml(x.factura||'—')}</div></td>
           <td><div style="font-weight:700">${escHtml(x.cliente||'—')}</div></td>
-          <td style="min-width:120px">${(()=>{const vCxC=DB.vehiculos.find(vv=>vv.id===x.vehiculoId);const nm=vCxC?(vCxC.marca+' '+vCxC.modelo+(vCxC.anio?' '+vCxC.anio:'')):(x.vehiculo||'');const vi=vCxC?vCxC.vin||'':'';return nm?`<div style="font-weight:700;font-size:12px">${escHtml(nm)}</div><div style="font-family:monospace;font-size:10px;color:var(--blue);margin-top:2px">${escHtml(vi||'Sin VIN')}</div>`:'<span style="color:var(--gray)">—</span>';})()}</td>
+          <td style="min-width:120px">${(()=>{const vCxC=DB.vehiculos.find(vv=>vv.id===x.vehiculoId);const nm=vCxC?((vCxC.codigo?vCxC.codigo+' — ':'')+vCxC.marca+' '+vCxC.modelo+(vCxC.anio?' '+vCxC.anio:'')+(vCxC.color?' · '+vCxC.color:'')+(vCxC.tipo?' · '+vCxC.tipo:'')):(x.vehiculo||'');const vi=vCxC?vCxC.vin||'':'';return nm?`<div style="font-weight:700;font-size:12px">${escHtml(nm)}</div><div style="font-family:monospace;font-size:10px;color:var(--blue);margin-top:2px">${escHtml(vi||'Sin VIN')}</div>`:'<span style="color:var(--gray)">—</span>';})()}</td>
           <td>${tipoBadge}<div style="font-size:11px;color:var(--gray);margin-top:2px">${escHtml(x.concepto||'—')}</div></td>
           <td style="font-weight:600">${fV(x.total)}</td>
           <td>
