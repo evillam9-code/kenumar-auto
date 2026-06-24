@@ -1948,7 +1948,7 @@ function showPage(id){
   document.getElementById('page-'+id)?.classList.add('active');
   document.getElementById('nav-'+id)?.classList.add('active');
   // Renderizar inmediatamente con datos locales (sin esperar Firebase)
-  const r={dashboard:renderDashboard,inventario:renderInventario,consultas:renderConsultas,ventas:renderVentas,cotizaciones:renderCotizaciones,clientes:renderClientes,suplidores:renderSuplidores,caja:renderCaja,gastos:renderGastos,nomina:renderNomina,informes:renderInformes,usuarios:renderUsuarios,config:renderConfig,gastosVeh:renderGastosVeh,cxp:renderCXP,cxc:renderCXC,autorizaciones:renderAutorizaciones,seguros:renderSeguros,facturaExterna:renderFacturaExterna,alertas:renderAlertas,chat:renderChat,cuentas:renderCuentas,cumpleanos:renderCumpleanos,backup:renderBackup,bitacora:renderBitacora,informeSemanal:renderInformeSemanal,prestamos:renderPrestamos,feria:renderFeria};
+  const r={dashboard:renderDashboard,inventario:renderInventario,consultas:renderConsultas,ventas:()=>{window._ventasSyncIntentado=false;renderVentas();},cotizaciones:renderCotizaciones,clientes:renderClientes,suplidores:renderSuplidores,caja:renderCaja,gastos:renderGastos,nomina:renderNomina,informes:renderInformes,usuarios:renderUsuarios,config:renderConfig,gastosVeh:renderGastosVeh,cxp:renderCXP,cxc:renderCXC,autorizaciones:renderAutorizaciones,seguros:renderSeguros,facturaExterna:renderFacturaExterna,alertas:renderAlertas,chat:renderChat,cuentas:renderCuentas,cumpleanos:renderCumpleanos,backup:renderBackup,bitacora:renderBitacora,informeSemanal:renderInformeSemanal,prestamos:renderPrestamos,feria:renderFeria};
   if(r[id])r[id]();
   // Aplicar máscaras de formato automáticamente
   setTimeout(()=>{try{const pg=document.getElementById('page-'+id);if(pg)autoFormatFields(pg);}catch{}},120);
@@ -4972,7 +4972,118 @@ function renderBackup(){
           <div><strong>¿Cada cuánto hacerlo?</strong> Se recomienda cada 5 días. El sistema te avisará automáticamente cuando sea necesario.</div>
         </div>
       </div>
-    </div>`;
+    </div>
+
+    <!-- HERRAMIENTA DE RECUPERACION -->
+    <div class="card" style="border-top:4px solid var(--amber)">
+      <div class="card-title">🔧 Herramienta de Recuperación de Vehículos</div>
+      <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
+        Si registraste una venta pero <strong>no aparece en Ventas</strong>, o un vehículo quedó en estado TRÁNSITO sin venta asociada, usa esta herramienta para detectarlo y restaurarlo a ACTIVO.
+      </p>
+      <div id="recuperacion-resultado" style="margin-bottom:12px"></div>
+      <div class="btn-row">
+        <button class="btn btn-amber" onclick="detectarVehiculosHuerfanos()">🔍 Detectar vehículos con problema</button>
+        <button class="btn btn-secondary" onclick="sincronizarTodoDesdeFirebase()">☁️ Recargar todo desde Firebase</button>
+      </div>
+    </div>\`;
+}
+
+// ══ HERRAMIENTAS DE RECUPERACIÓN ══
+function detectarVehiculosHuerfanos(){
+  const div=document.getElementById('recuperacion-resultado');
+  if(!div)return;
+  // Buscar vehículos en TRÁNSITO o VENDIDO que no tienen venta asociada
+  const huerfanos=DB.vehiculos.filter(v=>{
+    if(v.status!=='TRÁNSITO'&&v.status!=='VENDIDO')return false;
+    const tieneVenta=DB.ventas.some(x=>x.vehiculoId===v.id||x.vehiculoCodigo===v.codigo);
+    return !tieneVenta;
+  });
+  if(huerfanos.length===0){
+    div.innerHTML=\`<div style="background:var(--green2);border:1px solid var(--green);border-radius:8px;padding:12px;color:var(--green);font-weight:700;font-size:13px">✅ No se encontraron vehículos con problemas. Todo está en orden.</div>\`;
+    return;
+  }
+  div.innerHTML=\`
+    <div style="background:var(--amber2);border:1px solid var(--amber);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e">
+      <strong>⚠️ Se encontraron \${huerfanos.length} vehículo(s) en estado TRÁNSITO/VENDIDO sin venta registrada.</strong><br>
+      <span style="font-size:12px">Estos vehículos no aparecen en el inventario activo ni tienen venta. Puedes restaurarlos a ACTIVO para registrar la venta correctamente.</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      \${huerfanos.map(v=>\`
+        <div style="background:#fff;border:1.5px solid var(--amber);border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div style="font-family:monospace;font-size:11px;font-weight:700;color:var(--blue)">\${escHtml(v.codigo||'')}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--navy)">\${escHtml(v.marca+' '+v.modelo+' '+(v.anio||''))}\${v.color?' · '+escHtml(v.color):''}</div>
+            <div style="font-size:12px;margin-top:2px"><span class="badge badge-amber">\${v.status}</span>\${v.fechaVenta?\` <span style="font-size:11px;color:var(--gray)">Fecha venta registrada: \${fmtDate(v.fechaVenta)}</span>':''}</div>
+          </div>
+          <button class="btn btn-green" onclick="restaurarVehiculoActivo('\${v.id}')">🔄 Restaurar a ACTIVO</button>
+        </div>
+      \`).join('')}
+    </div>
+  \`;
+}
+
+function restaurarVehiculoActivo(vid){
+  const idx=DB.vehiculos.findIndex(x=>x.id===vid);
+  if(idx<0){toast('Vehículo no encontrado','error');return;}
+  const v=DB.vehiculos[idx];
+  openModal('🔄 Restaurar Vehículo a ACTIVO',\`
+    <div style="background:var(--amber2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">
+      <strong>\${escHtml(v.codigo+' — '+v.marca+' '+v.modelo+' '+(v.anio||''))}</strong><br>
+      Estado actual: <strong>\${v.status}</strong>
+    </div>
+    <p style="font-size:13px;margin-bottom:8px">Al restaurar este vehículo:</p>
+    <ul style="font-size:13px;padding-left:18px;display:flex;flex-direction:column;gap:4px">
+      <li>El estado cambia de <strong>\${v.status}</strong> → <strong>ACTIVO</strong></li>
+      <li>Volverá a aparecer en el inventario y en "Nueva Venta"</li>
+      <li>Podrás registrar la venta correctamente</li>
+    </ul>
+  \`,\`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+     <button class="btn btn-green" onclick="confirmarRestaurarVehiculo('\${vid}')">✅ Restaurar a ACTIVO</button>\`);
+}
+
+function confirmarRestaurarVehiculo(vid){
+  const idx=DB.vehiculos.findIndex(x=>x.id===vid);
+  if(idx<0)return;
+  const estadoAnterior=DB.vehiculos[idx].status;
+  DB.vehiculos[idx].status='ACTIVO';
+  DB.vehiculos[idx].fechaVenta='';
+  DB.vehiculos[idx].precioVentaFinal=0;
+  sDB('vehiculos');
+  if(typeof fbGuardar==='function'&&window._fbActivo){
+    fbGuardar('vehiculos').then(()=>{
+      toast('✅ Vehículo restaurado a ACTIVO y guardado en Firebase. Ya puedes registrar la venta.','success');
+    }).catch(()=>{
+      toast('✅ Restaurado localmente — sin conexión a Firebase','success');
+    });
+  } else {
+    toast('✅ Vehículo restaurado a ACTIVO','success');
+  }
+  logBit('backup','Restauró vehículo a ACTIVO desde Recuperación','Estado anterior: '+estadoAnterior);
+  closeModal();
+  // Refrescar la detección
+  detectarVehiculosHuerfanos();
+}
+
+async function sincronizarTodoDesdeFirebase(){
+  if(!window._fbDB||!window._fbCol){
+    toast('Sin conexión a Firebase','error');return;
+  }
+  toast('Recargando todo desde Firebase...','success');
+  try{
+    const keys=['vehiculos','ventas','clientes','suplidores','cxc','cxp','caja','gastos','gastosVehiculos','cotizaciones','nomina','nominaPagos','seguros','autorizaciones','facturasExternas','feria'];
+    for(const key of keys){
+      try{
+        const snap=await window._fbDB.collection(window._fbCol).doc(key).get();
+        if(snap.exists){const val=JSON.parse(snap.data().valor);if(val!==null)DB[key]=val;}
+      }catch(e){console.warn('Error cargando '+key,e.message);}
+    }
+    // Limpiar filtros y refrescar
+    const mesEl=document.getElementById('ventas-mes');
+    if(mesEl)mesEl.value='';
+    window._ventasSyncIntentado=true;
+    renderBackup();
+    toast('✅ Todo recargado desde Firebase — '+DB.ventas.length+' venta(s) · '+DB.vehiculos.filter(v=>v.status==='ACTIVO').length+' activos','success');
+  }catch(e){toast('Error: '+e.message,'error');}
 }
 
 // ══ MÓDULO CUMPLEAÑOS ══
@@ -7352,7 +7463,15 @@ function _generarPDFGastosVeh(gastos,tasa,filtroSup,filtroVeh,soloUnVeh){
 
 // ══ VENTAS ══
 function renderVentas(){
-  const mes=document.getElementById('ventas-mes')?.value||'';
+  // FIX: Asegurar que el filtro de mes no filtre datos inesperadamente al cargar
+  const mesEl=document.getElementById('ventas-mes');
+  const mes=mesEl?.value||'';
+  // AUTO-RECUPERACIÓN: si no hay ventas y Firebase está activo, sincronizar automáticamente
+  if(DB.ventas.length===0&&window._fbActivo&&window._fbDB&&!window._ventasSyncIntentado){
+    window._ventasSyncIntentado=true;
+    sincronizarVentasFirebase(true); // silencioso=true
+    return;
+  }
   const ventasFilt=mes?DB.ventas.filter(v=>v.fecha?.startsWith(mes)):DB.ventas;
   const tasa=parseFloat(DB.config.tasaCambio||60);
   // Convertir todo a RD$ para los totales
@@ -7366,9 +7485,10 @@ function renderVentas(){
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <input type="month" id="ventas-mes" value="${mes}" onchange="renderVentas()" style="padding:7px 12px;border:1.5px solid var(--gray3);border-radius:var(--radius-sm);font-size:13px">
         <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ventas-mes').value='';renderVentas()">🔄 Todos</button>
+        <button class="btn btn-sm" style="background:#7c3aed;color:#fff" onclick="sincronizarVentasFirebase()" title="Sincronizar ventas con Firebase">☁️ Sincronizar</button>
         <div style="width:1px;height:28px;background:var(--gray3);margin:0 2px"></div>
         <button id="vta-btn-imprimir" disabled class="btn btn-sm" style="${ds}" onclick="ventaAccion('imprimir')" title="Imprimir factura">🖨️ Imprimir</button>
-        ${(currentUser?.role==='admin'||canDo('editar'))?`<button id="vta-btn-editar" disabled class="btn btn-sm" style="${ds}" onclick="ventaAccion('editar')" title="Editar">✏️ Editar</button>`:''}
+        <button id="vta-btn-editar" disabled class="btn btn-sm" style="${ds}" onclick="ventaAccion('editar')" title="Editar">✏️ Editar</button>
         ${(currentUser?.role==='admin'||canDo('eliminar'))?`<button id="vta-btn-eliminar" disabled class="btn btn-sm" style="${ds}" onclick="ventaAccion('eliminar')" title="Eliminar">🗑 Eliminar</button>`:''}
         <div style="width:1px;height:28px;background:var(--gray3);margin:0 2px"></div>
         <button class="btn btn-secondary btn-sm" onclick="exportarVentasPDF('${mes}')">📄 PDF</button>
@@ -7815,12 +7935,8 @@ function selVenta(id,tr){
   const v=DB.ventas.find(x=>x.id===id);
   const actB=(bid,bg,c)=>{const b=document.getElementById(bid);if(b){b.disabled=false;b.style.cssText='background:'+bg+';color:'+c+';cursor:pointer;border:none;';}};
   actB('vta-btn-imprimir','#475569','#fff');
-  // CORREGIDO: antes solo el admin podía habilitar Editar/Eliminar aquí, aunque el
-  // botón se mostrara para usuarios con el permiso canDo('editar')/canDo('eliminar')
-  // — quedaban visibles pero deshabilitados. Ahora respeta el permiso real del usuario.
-  if(currentUser?.role==='admin'||canDo('editar')){
-    actB('vta-btn-editar','#2563eb','#fff');
-  }
+  // Editar disponible para todos los usuarios con acceso al módulo ventas
+  actB('vta-btn-editar','#2563eb','#fff');
   if(currentUser?.role==='admin'||canDo('eliminar')){
     actB('vta-btn-eliminar','#dc2626','#fff');
   }
@@ -7829,8 +7945,8 @@ function ventaAccion(accion){
   if(!ventaSelectedId)return;
   if(accion==='imprimir'&&!canDo('imprimir')){toast('No tienes permiso para imprimir','error');return;}else if(accion==='imprimir')imprimirFactura(ventaSelectedId);
   else if(accion==='cobrar')abonarVenta(ventaSelectedId);
-  else if(accion==='editar'&&!canDo('editar')){toast('No tienes permiso para editar','error');return;}else if(accion==='editar'){
-    if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar cotizaciones','error');return;}
+  else if(accion==='editar'){
+    // Editar disponible para todos los usuarios con acceso al módulo ventas
     editarVenta(ventaSelectedId);
   }
   else if(accion==='eliminar'&&!canDo('eliminar')){toast('No tienes permiso para eliminar','error');return;}else if(accion==='eliminar'){
@@ -8311,6 +8427,44 @@ function addDays(dateStr,days){
   return d.toISOString().split('T')[0];
 }
 
+// ══ RECUPERACIÓN / SINCRONIZACIÓN DE VENTAS ══
+async function sincronizarVentasFirebase(silencioso=false){
+  if(!window._fbDB||!window._fbCol){
+    if(!silencioso)toast('Sin conexión a Firebase — verifica tu internet','error');
+    return;
+  }
+  if(!silencioso)toast('Sincronizando con Firebase...','success');
+  try {
+    // Recargar ventas, vehículos y cxc desde Firebase
+    const keysRecuperar=['ventas','vehiculos','cxc','caja','cotizaciones'];
+    let recuperado=false;
+    for(const key of keysRecuperar){
+      try{
+        const snap=await window._fbDB.collection(window._fbCol).doc(key).get();
+        if(snap.exists){
+          const val=JSON.parse(snap.data().valor);
+          if(val!==null){
+            DB[key]=val;
+            recuperado=true;
+          }
+        }
+      }catch(e){console.warn('Error recuperando '+key,e.message);}
+    }
+    if(recuperado){
+      // Limpiar filtro de mes para mostrar todo
+      const mesEl=document.getElementById('ventas-mes');
+      if(mesEl)mesEl.value='';
+      window._ventasSyncIntentado=true;
+      renderVentas();
+      if(!silencioso)toast('✅ Sincronización completada — '+DB.ventas.length+' venta(s) cargada(s)','success');
+    } else {
+      if(!silencioso)toast('Firebase no tiene datos aún — las ventas están vacías en la nube','error');
+    }
+  } catch(e){
+    if(!silencioso)toast('Error de sincronización: '+e.message,'error');
+  }
+}
+
 // Verificar si una venta puede pasar automáticamente a VENDIDO
 // Condiciones: pago saldado + fecha de entrega registrada + sin docs pendientes
 function checkAutoVendido(ventaId){
@@ -8394,7 +8548,7 @@ function confirmarAbVenta(vid){
 }
 
 function editarVenta(vid){
-  if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar','error');return;}
+  // Editar ventas disponible para todos los usuarios con acceso al módulo
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
   const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const bancoCuentas=DB.config.bancoCuentas||[];
