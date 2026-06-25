@@ -689,7 +689,7 @@ function doLogin(){
     setTimeout(()=>{if(DB.config?.colores)aplicarColoresSistema();},500);
     setTimeout(()=>{if(DB.config?.colores)aplicarColoresSistema();},1500);
     actualizarLogoSidebar();
-    logBit('Sesión','Inició sesión','—');
+    logBit('Sesión','Inició sesión',currentUser.username||currentUser.nombre||'—');
     showPage('dashboard');
     // Punto 1: se quitan los mensajes/popups de alertas visibles al iniciar sesión.
     // Las alertas siguen disponibles en el módulo "Alertas" (sidebar).
@@ -1925,7 +1925,7 @@ function doLogout(){
   window._usersLoaded=false;
   window._savingUsers=false;
   if(currentUser){
-    logBit('Sesión','Cerró sesión','—');
+    logBit('Sesión','Cerró sesión',currentUser?.username||currentUser?.nombre||'—');
     try{const p=JSON.parse(localStorage.getItem('kenumar_presencia')||'{}');delete p[currentUser.id];localStorage.setItem('kenumar_presencia',JSON.stringify(p));}catch{}
     if(window._presenciaBC)try{window._presenciaBC.postMessage({uid:currentUser.id,ts:0});}catch{}
     if(window._presenciaGlobalInterval)clearInterval(window._presenciaGlobalInterval);
@@ -3522,7 +3522,7 @@ function guardarCajaMov(tipo){
     descripcion:desc,monto,moneda,banco,cuenta,
     referencia:banco+(cuenta?' / '+cuenta:''),
     responsable:document.getElementById('cj-resp').value});
-  logBit('caja','Registro manual de caja','');sDB('caja');closeModal();toast('Registro guardado ✓','success');renderCaja();
+  logBit('caja','Registro manual de caja',tipo+' — '+desc+' '+fmtMoneyDisplay(monto));sDB('caja');closeModal();toast('Registro guardado ✓','success');renderCaja();
 }
 
 // ══ GASTOS ══
@@ -3586,7 +3586,7 @@ function guardarEditGasto(i){
   DB.gastos[i].formaPago=document.getElementById('g-forma').value;
   DB.gastos[i].statusGasto=document.getElementById('g-status').value;
   DB.gastos[i].descripcion=document.getElementById('g-desc').value;
-  logBit('gastos','Editó gasto empresa','');sDB('gastos');closeModal();toast('Gasto actualizado ✓','success');renderGastos();
+  logBit('gastos','Editó gasto empresa',DB.gastos[i].categoria+' — '+DB.gastos[i].suplidor+' '+fmtMoneyDisplay(DB.gastos[i].monto));sDB('gastos');closeModal();toast('Gasto actualizado ✓','success');renderGastos();
 }
 function imprimirGastos(){
   const mes=new Date().toISOString().slice(0,7);
@@ -3729,7 +3729,7 @@ function guardarGasto(idx){
   else DB.gastos.push(g);
   if(g.formaPago==='CONTADO'&&montoAbonado>0)
     DB.caja.push({id:uid(),fecha:g.fecha,tipo:'SALIDA',categoria:'Gasto de Empresa',descripcion:'Gasto: '+desc,monto:montoAbonado,moneda:g.moneda||'RD$',banco:g.banco||'',cuenta:g.cuenta||'',responsable:g.responsable});
-  logBit('gastos','Guardó gasto empresa','');sDB('gastos');sDB('caja');closeModal();toast('Gasto guardado ✓','success');renderGastos();
+  logBit('gastos','Guardó gasto empresa',g.categoria+' — '+desc+' '+fmtMoneyDisplay(montoAbonado));sDB('gastos');sDB('caja');closeModal();toast('Gasto guardado ✓','success');renderGastos();
 }
 
 // ══ NÓMINA ══
@@ -4044,7 +4044,7 @@ function guardarPagoNomina(i){
   DB.caja.push({id:uid(),fecha:fechaPago,tipo:'SALIDA',categoria:'Nómina/Salario',
     descripcion:'Pago nómina: '+e.nombre+' ('+tipoLabel+')',
     monto,moneda,banco,cuenta,referencia:cuenta,responsable:currentUser.nombre});
-  logBit('nomina','Pagó nómina','');sDB('nominaPagos');sDB('caja');closeModal();toast('Pago registrado ✓','success');renderNomina();
+  logBit('nomina','Pagó nómina',e.nombre+' ('+tipoLabel+') — '+fmtMoneyDisplay(monto));sDB('nominaPagos');sDB('caja');closeModal();toast('Pago registrado ✓','success');renderNomina();
 }
 function imprimirPagosNomina(){
   const pagos=DB.nominaPagos||[];
@@ -4606,7 +4606,7 @@ function guardarEmpleado(idx){
   const activoVal=document.getElementById('e-activo')?.value;
   const e={id:idx!==undefined?DB.nomina[idx].id:uid(),nombre,cargo:document.getElementById('e-cargo').value,documento:document.getElementById('e-doc')?.value||'',fechaIngreso:document.getElementById('e-ingreso').value,formaPago:document.getElementById('e-pago').value,salario,telefono:document.getElementById('e-tel').value,activo:activoVal!=='false',docFrente:fEl?.style.display!=='none'&&fEl?.src?fEl.src:(idx!==undefined?DB.nomina[idx]?.docFrente||'':''),docDorso:dEl?.style.display!=='none'&&dEl?.src?dEl.src:(idx!==undefined?DB.nomina[idx]?.docDorso||'':''),pagos:idx!==undefined?DB.nomina[idx].pagos||[]:[]};
   if(idx!==undefined)DB.nomina[idx]=e;else DB.nomina.push(e);
-  logBit('nomina','Guardó empleado','');sDB('nomina');closeModal();toast('Empleado guardado ✓','success');renderNomina();
+  logBit('nomina','Guardó empleado',nombre+' — '+e.cargo+' '+fmtMoneyDisplay(salario));sDB('nomina');closeModal();toast('Empleado guardado ✓','success');renderNomina();
 }
 function editarEmpleado(i){
   const e=DB.nomina[i];
@@ -4686,7 +4686,7 @@ function guardarUsuario(idx){
   } else {
     setTimeout(()=>{window._savingUsers=false;},1000);
   }
-  logBit('usuarios','Creó usuario','');closeModal();toast('Usuario guardado ✓','success');renderUsuarios();
+  logBit('usuarios',idx!==undefined?'Editó usuario':'Creó usuario',nombre+' ('+user+')');closeModal();toast('Usuario guardado ✓','success');renderUsuarios();
   // Aplicar permisos de navegación inmediatamente (ocultar/mostrar módulos en sidebar)
   aplicarPermisosNav();
   // Re-renderizar página activa para que permisos apliquen de inmediato
@@ -6852,7 +6852,7 @@ function confirmarAbonoGastoVeh(i){
   }
   sDB('gastosVehiculos');
   closeModal();
-  logBit('gastosVeh','Registró pago/abono','');toast('Pago registrado ✓','success');
+  logBit('gastosVeh','Registró pago/abono',(DB.gastosVehiculos[i]?.tipo||'')+(DB.gastosVehiculos[i]?.vehiculo?' — '+DB.gastosVehiculos[i].vehiculo:''));toast('Pago registrado ✓','success');
   renderGastosVeh();
 }
 
@@ -8391,7 +8391,7 @@ function confirmarAbVenta(vid){
   DB.caja.push({id:uid(),fecha:document.getElementById('ab-fecha').value,tipo:'ENTRADA',categoria:'Cobro de Venta',descripcion:`Cobro ${DB.ventas[i].factura}: ${DB.ventas[i].cliente}`,monto,moneda:_abMon2,banco:_abBan2,cuenta:_abCue2,referencia:_abCue2,responsable:currentUser.nombre});
   sDB('ventas');sDB('caja');
   closeModal();
-  logBit('ventas','Registró cobro','');toast('Cobro registrado ✓','success');
+  logBit('ventas','Registró cobro',DB.ventas[i]?.factura+' — '+DB.ventas[i]?.cliente+' '+fmtMoneyDisplay(monto));toast('Cobro registrado ✓','success');
   renderVentas();
 }
 
@@ -9321,7 +9321,7 @@ function guardarCliente(idx){
   const fEl=document.getElementById('c-doc-frente-prev');const dEl=document.getElementById('c-doc-dorso-prev');
   const c={id:idx!==undefined?DB.clientes[idx].id:uid(),nombre,tipoDoc:document.getElementById('c-tipodoc').value,documento:document.getElementById('c-doc').value.trim(),ingresos:parseFloat((document.getElementById('c-ingresos')?.value||'0').replace(/,/g,''))||0,ciudad:document.getElementById('c-ciudad').value,provincia:document.getElementById('c-prov').value,telefono:document.getElementById('c-tel').value,telefono2:document.getElementById('c-tel2').value,whatsapp:document.getElementById('c-whatsapp')?.value||'',direccion:document.getElementById('c-dir').value,fechaCumpleanos:document.getElementById('c-cumpleanos')?.value||'',refNombre:document.getElementById('c-ref-nombre')?.value||'',refTel:document.getElementById('c-ref-tel')?.value||'',docFrente:fEl?.style.display!=='none'&&fEl?.src?fEl.src:(idx!==undefined?DB.clientes[idx]?.docFrente||'':''),docDorso:dEl?.style.display!=='none'&&dEl?.src?dEl.src:(idx!==undefined?DB.clientes[idx]?.docDorso||'':'')};
   if(idx!==undefined)DB.clientes[idx]=c;else DB.clientes.push(c);
-  logBit('clientes','Guardó cliente','');sDB('clientes');closeModal();toast('Cliente guardado ✓','success');renderClientes();
+  logBit('clientes','Guardó cliente',c.nombre+(c.telefono?' — '+c.telefono:''));sDB('clientes');closeModal();toast('Cliente guardado ✓','success');renderClientes();
 }
 
 // ══ SUPLIDORES ══
