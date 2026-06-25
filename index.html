@@ -703,12 +703,14 @@ function doLogin(){
   // Firebase: intentar conectar, pero si no responde, entrar con datos locales
   if(typeof fbIniciar==='function'){
     let _localFbCargado=false;
+    // Timeout: si Firebase no responde en 7s, entrar igual con aviso
     const _fbTimeout=setTimeout(()=>{
       if(!_localFbCargado){
         _localFbCargado=true;
-        _bloquearSinFirebase();
+        _mostrarAvisoFirebase();
+        setTimeout(_entrarDashboard, 800);
       }
-    },4000);
+    },7000);
     fbIniciar().then(()=>{
       _localFbCargado=true;
       clearTimeout(_fbTimeout);
@@ -717,10 +719,12 @@ function doLogin(){
     }).catch(()=>{
       _localFbCargado=true;
       clearTimeout(_fbTimeout);
-      _bloquearSinFirebase();
+      _mostrarAvisoFirebase();
+      setTimeout(_entrarDashboard, 800);
     });
   } else {
-    _bloquearSinFirebase();
+    _mostrarAvisoFirebase();
+    setTimeout(_entrarDashboard, 800);
   }
 }
 function _getRolLabel(role){
@@ -12847,19 +12851,16 @@ window.sDB = function(key){
   window._savedAt[key]=Date.now();
 
   if(!window._fbActivo){
-    // Firebase aún no conectó — guardar en localStorage (ya lo hizo _sDB_orig)
-    // e intentar subir silenciosamente. NO mostrar error todavía.
+    if(dot)dot.style.background='#f59e0b';
+    if(txt)txt.textContent='Sin Firebase';
+    if(!document.getElementById('fb-aviso-banner'))_mostrarAvisoFirebase();
     if(typeof fbGuardar==='function'){
       fbGuardar(key).then(()=>{
         window._fbActivo=true;
         if(dot)dot.style.background='#22c55e';
         if(txt)txt.textContent='✓ Firebase';
         var b=document.getElementById('fb-aviso-banner');if(b)b.remove();
-      }).catch(()=>{
-        // Silencioso si Firebase aún no cargó al inicio
-        if(dot)dot.style.background='#f59e0b';
-        if(txt)txt.textContent='Sin Firebase';
-      });
+      }).catch(()=>{});
     }
     return;
   }
@@ -13151,21 +13152,12 @@ window.fbIniciar = async function(){
       // Verificar backup (solo admin)
       _verificarBackupAdmin();
     } else {
-      const tieneVehiculos=(DB.vehiculos||[]).length>0;
-      const tieneVentas=(DB.ventas||[]).length>0;
-      const tieneUsers=(DB.users||[]).length>1;
-      const tieneConfig=DB.config&&(DB.config.empresa||DB.config.moneda);
-      const hayDatosReales=tieneVehiculos||tieneVentas||tieneUsers||tieneConfig;
-      if(hayDatosReales){
-        const keys=['config','users','vehiculos','clientes','suplidores','ventas','cotizaciones',
-          'caja','gastos','nomina','nominaPagos','gastosVehiculos','cxp','cxc','autorizaciones','seguros','facturasExternas','log','feria'];
-        for(const k of keys) await fbGuardar(k);
-        console.log('✅ Firebase: datos iniciales guardados desde localStorage');
-      } else {
-        console.log('ℹ️ Firebase vacío y sin datos locales — solo conectando sin subir');
-      }
+      const keys=['config','users','vehiculos','clientes','suplidores','ventas','cotizaciones',
+        'caja','gastos','nomina','nominaPagos','gastosVehiculos','cxp','cxc','autorizaciones','seguros','facturasExternas','log','feria'];
+      for(const k of keys) await fbGuardar(k);
       window._fbCargado=true;
       setStatus('#22c55e','✓ Firebase');
+      console.log('✅ Firebase: datos iniciales guardados');
       _verificarBackupAdmin();
     }
   } catch(e) {
