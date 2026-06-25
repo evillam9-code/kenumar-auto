@@ -12792,55 +12792,74 @@ async function fbCargar(){
   return loaded;
 }
 
-// ══ GUARDADO FIREBASE OBLIGATORIO ══
-// Modal de error si Firebase no está disponible
+// ══ GUARDADO FIREBASE — AVISO SUAVE (NO BLOQUEA) ══
+// Muestra banner de advertencia sin ocultar la app ni bloquear las ventas
 function _bloquearSinFirebase(){
-  if(document.getElementById('fb-bloqueo-total'))return;
-  var ws=document.getElementById('welcome-screen');
-  if(ws)ws.classList.remove('show');
-  var app=document.getElementById('app');
-  if(app)app.style.display='none';
-  var d=document.createElement('div');
-  d.id='fb-bloqueo-total';
-  d.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center;font-family:Outfit,sans-serif';
-  d.innerHTML='<div style="text-align:center;max-width:400px;padding:32px">'
-    +'<div style="font-size:56px;margin-bottom:16px">⚠️</div>'
-    +'<div style="font-size:22px;font-weight:900;color:#0f172a;margin-bottom:8px">Sin conexión al servidor</div>'
-    +'<div style="font-size:14px;color:#64748b;margin-bottom:24px;line-height:1.6">El sistema requiere conexión a internet para funcionar.<br>Verifica tu conexión e intenta de nuevo.</div>'
-    +'<div style="background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:24px;border:1px solid #e2e8f0">'
-    +'<div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;margin-bottom:6px">Contacta al administrador</div>'
-    +'<div style="font-size:18px;font-weight:800;color:#0f172a">Edward Villa</div>'
-    +'<a href="tel:8498579190" style="display:inline-block;margin-top:8px;color:#2563eb;font-size:15px;font-weight:700;text-decoration:none">?? 849-857-9190</a>'
-    +'</div>'
-    +'<button onclick="location.reload()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 32px;font-size:15px;font-weight:700;cursor:pointer;width:100%">?? Reintentar</button>'
+  // CORREGIDO: Ya no bloquea la app — solo muestra un banner de advertencia.
+  // Los datos se guardan en localStorage como respaldo y Firebase reintentará.
+  if(document.getElementById('fb-aviso-banner'))return;
+  var b=document.createElement('div');
+  b.id='fb-aviso-banner';
+  b.style.cssText='position:fixed;bottom:80px;right:20px;z-index:9998;background:#1e293b;color:#fff;border-radius:12px;padding:14px 18px;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.3);font-family:Outfit,sans-serif;font-size:13px;line-height:1.5;border-left:4px solid #f59e0b';
+  b.innerHTML='<div style="font-weight:700;font-size:14px;margin-bottom:4px">⚠️ Sin conexión a Firebase</div>'
+    +'<div style="color:#94a3b8;margin-bottom:10px">Los datos se guardan localmente.<br>Se sincronizarán al reconectar.</div>'
+    +'<div style="display:flex;gap:8px">'
+    +'<button onclick="window._fbReintento&&window._fbReintento();document.getElementById(\'fb-aviso-banner\')?.remove()" style="background:#2563eb;color:#fff;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:Outfit,sans-serif">🔄 Reconectar</button>'
+    +'<button onclick="document.getElementById(\'fb-aviso-banner\').remove()" style="background:#334155;color:#94a3b8;border:none;border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:Outfit,sans-serif">✕</button>'
     +'</div>';
-  document.body.appendChild(d);
+  document.body.appendChild(b);
+  // Auto-quitar después de 12 segundos
+  setTimeout(()=>{var el=document.getElementById('fb-aviso-banner');if(el)el.remove();},12000);
 }
 function _mostrarAvisoFirebase(){ _bloquearSinFirebase(); }
-function _mostrarErrorFirebase(){ _bloquearSinFirebase(); }
+function _mostrarErrorFirebase(){
+  // CORREGIDO: En error de guardado solo muestra toast — no bloquea la app.
+  // El dato ya fue guardado en localStorage, no se pierde nada.
+  const dot=document.getElementById('fb-dot');
+  const txt=document.getElementById('fb-text');
+  if(dot)dot.style.background='#f59e0b';
+  if(txt)txt.textContent='Reintentando...';
+  // Reintentar automáticamente en 5 segundos
+  if(!window._fbRetryTimer){
+    window._fbRetryTimer=setTimeout(()=>{
+      window._fbRetryTimer=null;
+      if(typeof fbIniciar==='function')fbIniciar().catch(()=>{});
+    },5000);
+  }
+}
+
+// Función de reintento manual (usada por el banner)
+window._fbReintento=function(){
+  if(typeof fbIniciar==='function')fbIniciar().catch(()=>{});
+};
 
 const _sDB_orig = sDB;
 window._fbActivo = false;
 window._fbCargado = false;
-// sDB: guarda en localStorage como caché Y en Firebase (obligatorio)
+// sDB: guarda en localStorage como caché Y en Firebase
+// CORREGIDO: Si Firebase no está listo aún (cargando inicial), encola el guardado
+//            sin bloquear ni mostrar error — es normal durante los primeros segundos.
 window.sDB = function(key){
   try { _sDB_orig(key); } catch(e){}
   const dot=document.getElementById('fb-dot');
   const txt=document.getElementById('fb-text');
-  // Registrar timestamp de cuando guardamos (para ignorar el eco del listener)
   if(!window._savedAt)window._savedAt={};
   window._savedAt[key]=Date.now();
 
   if(!window._fbActivo){
-    if(dot)dot.style.background='#f59e0b';
-    if(txt)txt.textContent='Sin Firebase';
-    if(!document.getElementById('fb-aviso-banner'))_mostrarAvisoFirebase();
+    // Firebase aún no conectó — guardar en localStorage (ya lo hizo _sDB_orig)
+    // e intentar subir silenciosamente. NO mostrar error todavía.
     if(typeof fbGuardar==='function'){
       fbGuardar(key).then(()=>{
         window._fbActivo=true;
         if(dot)dot.style.background='#22c55e';
         if(txt)txt.textContent='✓ Firebase';
-      }).catch(()=>{});
+        var b=document.getElementById('fb-aviso-banner');if(b)b.remove();
+      }).catch(()=>{
+        // Silencioso si Firebase aún no cargó al inicio
+        if(dot)dot.style.background='#f59e0b';
+        if(txt)txt.textContent='Sin Firebase';
+      });
     }
     return;
   }
@@ -12849,9 +12868,11 @@ window.sDB = function(key){
   fbGuardar(key).then(()=>{
     if(dot)dot.style.background='#22c55e';
     if(txt)txt.textContent='✓ Firebase';
+    var b=document.getElementById('fb-aviso-banner');if(b)b.remove();
   }).catch(()=>{
-    if(dot)dot.style.background='#ef4444';
-    if(txt)txt.textContent='Error';
+    if(dot)dot.style.background='#f59e0b';
+    if(txt)txt.textContent='Sin conexión';
+    // CORREGIDO: Ya no bloquea — solo muestra aviso suave y reintenta
     _mostrarErrorFirebase();
   });
 };
