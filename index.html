@@ -498,6 +498,7 @@ const today=()=>new Date().toISOString().split('T')[0];
 const fmtDate=d=>{if(!d)return '—';try{return new Date(d+'T12:00:00').toLocaleDateString('es-DO',{day:'2-digit',month:'short',year:'numeric'})}catch{return d}};
 const uid=()=>'id'+Date.now()+Math.random().toString(36).slice(2,6);
 function genFactura(){const nums=DB.ventas.map(v=>{const m=(v.factura||'').match(/(\d+)$/);return m?parseInt(m[1]):0;});const next=(nums.length?Math.max(...nums):0)+1;return 'FAC-'+String(next).padStart(6,'0');}
+function genCXC(){const nums=(DB.cxc||[]).map(x=>{const m=(x.factura||'').match(/(\d+)$/);return m?parseInt(m[1]):0;});const next=(nums.length?Math.max(...nums):0)+1;return 'CXC-'+String(next).padStart(6,'0');}
 const escHtml=s=>{const d=document.createElement('div');d.textContent=s||'';return d.innerHTML};
 // ══ BANCOS Y CUENTAS HELPER ══
 function getBancoCuentas(){return DB.config.bancoCuentas||[];}
@@ -702,14 +703,13 @@ function doLogin(){
   // Firebase: intentar conectar, pero si no responde, entrar con datos locales
   if(typeof fbIniciar==='function'){
     let _localFbCargado=false;
-    // Timeout: si Firebase no responde en 7s, entrar igual con aviso
+    // Timeout: si Firebase no responde en 4s, BLOQUEAR — no se puede trabajar sin Firebase
     const _fbTimeout=setTimeout(()=>{
       if(!_localFbCargado){
         _localFbCargado=true;
-        _mostrarAvisoFirebase();
-        setTimeout(_entrarDashboard, 800);
+        _bloquearSinFirebase();
       }
-    },7000);
+    },10000);
     fbIniciar().then(()=>{
       _localFbCargado=true;
       clearTimeout(_fbTimeout);
@@ -718,12 +718,10 @@ function doLogin(){
     }).catch(()=>{
       _localFbCargado=true;
       clearTimeout(_fbTimeout);
-      _mostrarAvisoFirebase();
-      setTimeout(_entrarDashboard, 800);
+      _bloquearSinFirebase();
     });
   } else {
-    _mostrarAvisoFirebase();
-    setTimeout(_entrarDashboard, 800);
+    _bloquearSinFirebase();
   }
 }
 function _getRolLabel(role){
@@ -2901,7 +2899,7 @@ function formVehiculo(v){
       <div class="form-field"><label>Fecha de Compra</label><input type="date" id="v-fecha" value="${v?.fecha||today()}"></div>
     </div>
     <div class="form-row c2">
-      <div class="form-field"><label class="required">Chasis / VIN</label><input type="text" id="v-vin" value="${escHtml(v?.vin||'')}" placeholder="Número de chasis o VIN" maxlength="17" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="form-field"><label class="required">Chasis / VIN</label><input type="text" id="v-vin" value="${escHtml(v?.vin||'')}" placeholder="Número de chasis o VIN" maxlength="17" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase();verificarVinDuplicado(this.value,'${v?.id||''}')"><div id="v-vin-alerta" style="display:none;margin-top:5px;background:#fee2e2;border:1px solid #dc2626;border-radius:6px;padding:7px 10px;font-size:12px;font-weight:700;color:#dc2626"></div></div>
       <div class="form-field"><label>Placa</label><input type="text" id="v-placa" value="${escHtml(v?.placa||'')}" placeholder="A000000" maxlength="7" style="text-transform:uppercase" oninput="fmtPlaca(this)"></div>
     </div>
     <div class="form-row c2">
@@ -2929,6 +2927,24 @@ function formVehiculo(v){
 function nuevoVehiculo(){openModal('➕ Nuevo Registro de Vehículo',formVehiculo(null),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarVehiculo()">💾 Guardar Vehículo</button>`);}
 function editarVehiculo(id){const v=DB.vehiculos.find(x=>x.id===id);if(!v)return;openModal('✏️ Editar Registro de Vehículo',formVehiculo(v),`<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="guardarVehiculo('${id}')">💾 Actualizar</button>`);}
 
+function verificarVinDuplicado(vin, idActual){
+  var alerta=document.getElementById('v-vin-alerta');
+  if(!alerta)return;
+  if(!vin||vin.length<5){alerta.style.display='none';return;}
+  // Solo bloquear si el duplicado está en inventario activo (ACTIVO, ADUANA, EN EEUU, TRÁNSITO)
+  // No bloquear si está VENDIDO — ese ya salió y el chasis puede reutilizarse
+  var estadosActivos=['ACTIVO','ADUANA','EN EEUU','TRÁNSITO'];
+  var dup=DB.vehiculos.find(function(v){
+    return v.vin&&v.vin.toUpperCase()===vin.toUpperCase()&&v.id!==idActual&&estadosActivos.indexOf(v.status)!==-1;
+  });
+  if(dup){
+    alerta.style.display='block';
+    alerta.innerHTML='&#x26A0;&#xFE0F; Ya existe un veh&iacute;culo con este chasis en inventario: <strong>'+escHtml(dup.codigo)+' &mdash; '+escHtml(dup.marca+' '+dup.modelo+' '+(dup.anio||''))+'</strong> ['+dup.status+']';
+  } else {
+    alerta.style.display='none';
+  }
+}
+
 function guardarVehiculo(id){
   const cod=document.getElementById('v-cod').value.trim();
   const prop=document.getElementById('v-prop').value;
@@ -2946,8 +2962,9 @@ function guardarVehiculo(id){
   if(!anio){toast('El año es requerido','error');return;}
   if(!vin){toast('El Chasis/VIN es requerido','error');return;}
   // Validar duplicado por chasis/VIN únicamente
-  const vinDup=DB.vehiculos.find(v=>v.vin&&v.vin.toUpperCase()===vin.toUpperCase()&&v.id!==id);
-  if(vinDup){toast('Ya existe un vehículo con ese chasis/VIN: '+vinDup.codigo+' — '+vinDup.marca+' '+vinDup.modelo+' '+vinDup.anio,'error');return;}
+  const _estadosActivos=['ACTIVO','ADUANA','EN EEUU','TRÁNSITO'];
+  const vinDup=DB.vehiculos.find(v=>v.vin&&v.vin.toUpperCase()===vin.toUpperCase()&&v.id!==id&&_estadosActivos.includes(v.status));
+  if(vinDup){toast('⚠️ Chasis duplicado: '+vinDup.codigo+' — '+vinDup.marca+' '+vinDup.modelo+' '+vinDup.anio+' ['+vinDup.status+'] — No se puede registrar mientras esté en inventario activo.','error');return;}
   const fotoEl=document.getElementById('v-foto-prev');
   const carfaxEl=document.getElementById('v-carfax-prev');
   const obj={
@@ -4972,8 +4989,95 @@ function renderBackup(){
           <div><strong>¿Cada cuánto hacerlo?</strong> Se recomienda cada 5 días. El sistema te avisará automáticamente cuando sea necesario.</div>
         </div>
       </div>
-    </div>`;
+    </div>
+
+    <!-- HERRAMIENTA DE RECUPERACION -->
+    <div class="card" style="border-top:4px solid var(--amber)">
+      <div class="card-title">&#x1F527; Herramienta de Recuperaci&#xF3;n de Veh&#xED;culos</div>
+      <p style="font-size:13px;color:var(--gray);margin-bottom:16px">
+        Si un veh&#xED;culo qued&#xF3; en estado <strong>TR&#xC1;NSITO</strong> sin venta asociada, usa esta herramienta para detectarlo y restaurarlo a <strong>ACTIVO</strong>.
+      </p>
+      <div id="recuperacion-resultado" style="margin-bottom:12px"></div>
+      <div class="btn-row">
+        <button class="btn btn-amber" onclick="detectarVehiculosHuerfanos()">&#x1F50D; Detectar veh&#xED;culos con problema</button>
+        <button class="btn btn-secondary" onclick="sincronizarTodoDesdeFirebase()">&#x2601;&#xFE0F; Recargar todo desde Firebase</button>
+      </div>
+    </div>\`;
 }
+
+// ══ HERRAMIENTAS DE RECUPERACION ══
+function detectarVehiculosHuerfanos(){
+  var div=document.getElementById('recuperacion-resultado');
+  if(!div)return;
+  var huerfanos=DB.vehiculos.filter(function(v){
+    if(v.status!=='TR\u00c1NSITO'&&v.status!=='VENDIDO')return false;
+    return !DB.ventas.some(function(x){return x.vehiculoId===v.id||x.vehiculoCodigo===v.codigo;});
+  });
+  if(huerfanos.length===0){
+    div.innerHTML='<div style="background:var(--green2);border:1px solid var(--green);border-radius:8px;padding:12px;color:var(--green);font-weight:700">&#x2705; No hay veh\u00edculos con problemas.</div>';
+    return;
+  }
+  var rows=huerfanos.map(function(v){
+    var fecha=v.fechaVenta?' &nbsp;<span style="font-size:11px;color:var(--gray)">Fecha: '+fmtDate(v.fechaVenta)+'</span>':'';
+    return '<div style="background:#fff;border:1.5px solid var(--amber);border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+      +'<div><div style="font-family:monospace;font-size:11px;font-weight:700;color:var(--blue)">'+escHtml(v.codigo||'')+'</div>'
+      +'<div style="font-size:14px;font-weight:700;color:var(--navy)">'+escHtml(v.marca+' '+v.modelo+' '+(v.anio||''))+'</div>'
+      +'<div style="font-size:12px;margin-top:2px"><span class="badge badge-amber">'+v.status+'</span>'+fecha+'</div></div>'
+      +'<button class="btn btn-green" onclick="restaurarVehiculoActivo(''+v.id+'')">&#x1F504; Restaurar a ACTIVO</button>'
+      +'</div>';
+  }).join('');
+  div.innerHTML='<div style="background:var(--amber2);border:1px solid var(--amber);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#92400e">'
+    +'<strong>&#x26A0; '+huerfanos.length+' veh\u00edculo(s) en TR\u00c1NSITO/VENDIDO sin venta registrada.</strong><br>'
+    +'<span style="font-size:12px">Resst\u00e1uralos a ACTIVO para poder registrar la venta.</span>'
+    +'</div>'+rows;
+}
+function restaurarVehiculoActivo(vid){
+  var idx=DB.vehiculos.findIndex(function(x){return x.id===vid;});
+  if(idx<0){toast('Veh\u00edculo no encontrado','error');return;}
+  var v=DB.vehiculos[idx];
+  openModal('Restaurar a ACTIVO',
+    '<div style="background:var(--amber2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:13px">'
+    +'<strong>'+escHtml(v.codigo+' — '+v.marca+' '+v.modelo+' '+(v.anio||''))+'</strong><br>'
+    +'Estado actual: <strong>'+v.status+'</strong></div>'
+    +'<p style="font-size:13px">El veh\u00edculo volver\u00e1 a ACTIVO y podr\u00e1s registrar la venta correctamente.</p>',
+    '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
+    +' <button class="btn btn-green" onclick="confirmarRestaurarVehiculo(''+vid+'')">&#x2705; Restaurar</button>');
+}
+function confirmarRestaurarVehiculo(vid){
+  var idx=DB.vehiculos.findIndex(function(x){return x.id===vid;});
+  if(idx<0)return;
+  var ant=DB.vehiculos[idx].status;
+  DB.vehiculos[idx].status='ACTIVO';
+  DB.vehiculos[idx].fechaVenta='';
+  DB.vehiculos[idx].precioVentaFinal=0;
+  sDB('vehiculos');
+  if(typeof fbGuardar==='function'&&window._fbActivo){
+    fbGuardar('vehiculos').then(function(){
+      toast('&#x2705; Restaurado a ACTIVO y guardado en Firebase','success');
+    }).catch(function(){toast('&#x2705; Restaurado (sin Firebase)','success');});
+  } else {
+    toast('&#x2705; Veh\u00edculo restaurado a ACTIVO','success');
+  }
+  if(typeof logBit==='function')logBit('backup','Restaur\u00f3 veh\u00edculo a ACTIVO','Anterior: '+ant);
+  closeModal();
+  detectarVehiculosHuerfanos();
+}
+async function sincronizarTodoDesdeFirebase(){
+  if(!window._fbDB||!window._fbCol){toast('Sin conexi\u00f3n a Firebase','error');return;}
+  toast('Recargando desde Firebase...','success');
+  try{
+    var keys=['vehiculos','ventas','clientes','suplidores','cxc','cxp','caja','gastos','gastosVehiculos','cotizaciones','nomina','nominaPagos','seguros','autorizaciones','facturasExternas','feria'];
+    for(var i=0;i<keys.length;i++){
+      try{
+        var snap=await window._fbDB.collection(window._fbCol).doc(keys[i]).get();
+        if(snap.exists){var val=JSON.parse(snap.data().valor);if(val!==null)DB[keys[i]]=val;}
+      }catch(e){console.warn('Error:'+keys[i],e.message);}
+    }
+    renderBackup();
+    toast('&#x2705; Recargado — '+DB.ventas.length+' venta(s) · '+DB.vehiculos.filter(function(v){return v.status==='ACTIVO';}).length+' activos','success');
+  }catch(e){toast('Error: '+e.message,'error');}
+}
+
 
 // ══ MÓDULO CUMPLEAÑOS ══
 function renderCumpleanos(){
@@ -7815,9 +7919,6 @@ function selVenta(id,tr){
   const v=DB.ventas.find(x=>x.id===id);
   const actB=(bid,bg,c)=>{const b=document.getElementById(bid);if(b){b.disabled=false;b.style.cssText='background:'+bg+';color:'+c+';cursor:pointer;border:none;';}};
   actB('vta-btn-imprimir','#475569','#fff');
-  // CORREGIDO: antes solo el admin podía habilitar Editar/Eliminar aquí, aunque el
-  // botón se mostrara para usuarios con el permiso canDo('editar')/canDo('eliminar')
-  // — quedaban visibles pero deshabilitados. Ahora respeta el permiso real del usuario.
   if(currentUser?.role==='admin'||canDo('editar')){
     actB('vta-btn-editar','#2563eb','#fff');
   }
@@ -7829,10 +7930,7 @@ function ventaAccion(accion){
   if(!ventaSelectedId)return;
   if(accion==='imprimir'&&!canDo('imprimir')){toast('No tienes permiso para imprimir','error');return;}else if(accion==='imprimir')imprimirFactura(ventaSelectedId);
   else if(accion==='cobrar')abonarVenta(ventaSelectedId);
-  else if(accion==='editar'&&!canDo('editar')){toast('No tienes permiso para editar','error');return;}else if(accion==='editar'){
-    if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar cotizaciones','error');return;}
-    editarVenta(ventaSelectedId);
-  }
+  else if(accion==='editar'&&!canDo('editar')){toast('No tienes permiso para editar ventas','error');return;}else if(accion==='editar'){editarVenta(ventaSelectedId);}
   else if(accion==='eliminar'&&!canDo('eliminar')){toast('No tienes permiso para eliminar','error');return;}else if(accion==='eliminar'){
     if(currentUser?.role!=='admin'&&!canDo('eliminar')){toast('No tienes permiso para eliminar','error');return;}
     const v=DB.ventas.find(x=>x.id===ventaSelectedId);
@@ -8394,7 +8492,7 @@ function confirmarAbVenta(vid){
 }
 
 function editarVenta(vid){
-  if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar','error');return;}
+  if(currentUser?.role!=='admin'&&!canDo('editar')){toast('No tienes permiso para editar ventas','error');return;}
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
   const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const bancoCuentas=DB.config.bancoCuentas||[];
@@ -10968,7 +11066,7 @@ function guardarCXCManual(){
   const vence=document.getElementById('ncxc-vence').value;
   if(!DB.cxc)DB.cxc=[];
   DB.cxc.push({
-    id:uid(),ventaId:'',factura:'CXC-'+uid().slice(0,6).toUpperCase(),
+    id:uid(),ventaId:'',factura:genCXC(),
     cliente:cli?.nombre||'',clienteId:cliId,
     vehiculo:'',concepto,moneda,
     total,abono,saldo,
@@ -12796,19 +12894,37 @@ async function fbCargar(){
 
 // ══ GUARDADO FIREBASE OBLIGATORIO ══
 // Modal de error si Firebase no está disponible
+function _bloquearSinFirebase(){
+  // Ocultar pantalla de bienvenida si está visible
+  var ws=document.getElementById('welcome-screen');
+  if(ws)ws.classList.remove('show');
+  // Asegurar que el app NO esté visible
+  var app=document.getElementById('app');
+  if(app)app.style.display='none';
+  // Mostrar pantalla de bloqueo total
+  if(document.getElementById('fb-bloqueo-total'))return;
+  var bloqueo=document.createElement('div');
+  bloqueo.id='fb-bloqueo-total';
+  bloqueo.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;align-items:center;justify-content:center;font-family:\'Outfit\',sans-serif';
+  bloqueo.innerHTML='<div style="text-align:center;max-width:400px;padding:32px">'
+    +'<div style="font-size:56px;margin-bottom:16px">⚠️</div>'
+    +'<div style="font-size:22px;font-weight:900;color:#0f172a;margin-bottom:8px">Sin conexión al servidor</div>'
+    +'<div style="font-size:14px;color:#64748b;margin-bottom:24px;line-height:1.6">El sistema requiere conexión a internet para funcionar.<br>Verifica tu conexión e intenta de nuevo.</div>'
+    +'<div style="background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:24px;border:1px solid #e2e8f0">'
+    +'<div style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Contacta al administrador</div>'
+    +'<div style="font-size:18px;font-weight:800;color:#0f172a">Edward Villa</div>'
+    +'<a href="tel:8498579190" style="display:inline-block;margin-top:8px;color:#2563eb;font-size:15px;font-weight:700;text-decoration:none">📞 849-857-9190</a>'
+    +'</div>'
+    +'<button onclick="location.reload()" style="background:#2563eb;color:#fff;border:none;border-radius:10px;padding:12px 32px;font-size:15px;font-weight:700;cursor:pointer;font-family:\'Outfit\',sans-serif;width:100%">🔄 Reintentar conexión</button>'
+    +'</div>';
+  document.body.appendChild(bloqueo);
+}
 function _mostrarAvisoFirebase(){
-  // Aviso NO bloqueante - solo muestra un banner y permite continuar
-  const tel='849-857-9190';
-  if(document.getElementById('fb-aviso-banner'))return;
-  const banner=document.createElement('div');
-  banner.id='fb-aviso-banner';
-  banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99998;background:#fef3c7;border-bottom:3px solid #f59e0b;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:\'Outfit\',sans-serif;font-size:13px;color:#92400e';
-  banner.innerHTML='<div style="display:flex;align-items:center;gap:10px"><span style="font-size:20px">⚠️</span><div><strong>Sin conexión a Firebase</strong> — El sistema funciona con datos locales. Los cambios se guardarán cuando vuelva la conexión. &nbsp;<a href="tel:8498579190" style="color:#dc2626;font-weight:700;text-decoration:none">📞 '+tel+'</a></div></div><button onclick="this.parentElement.remove()" style="background:#92400e;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">✕ Cerrar</button>';
-  document.body.prepend(banner);
+  // Redirigir al bloqueo total
+  _bloquearSinFirebase();
 }
 function _mostrarErrorFirebase(){
-  // Llamado cuando se intenta GUARDAR sin Firebase — aviso no bloqueante
-  _mostrarAvisoFirebase();
+  _bloquearSinFirebase();
 }
 
 const _sDB_orig = sDB;
@@ -12824,9 +12940,9 @@ window.sDB = function(key){
   window._savedAt[key]=Date.now();
 
   if(!window._fbActivo){
-    if(dot)dot.style.background='#f59e0b';
+    if(dot)dot.style.background='#ef4444';
     if(txt)txt.textContent='Sin Firebase';
-    if(!document.getElementById('fb-aviso-banner'))_mostrarAvisoFirebase();
+    _bloquearSinFirebase();
     if(typeof fbGuardar==='function'){
       fbGuardar(key).then(()=>{
         window._fbActivo=true;
