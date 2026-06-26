@@ -8652,7 +8652,12 @@ function guardarEditarVenta(vid){
 
 function imprimirFactura(vid){
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
-  const cli=DB.clientes.find(c=>c.id===v.clienteId);
+  // Buscar cliente por ID, y si no tiene dirección buscar también por nombre
+  let cli=DB.clientes.find(c=>c.id===v.clienteId);
+  if(!cli||!cli.direccion) {
+    const cliFallback=DB.clientes.find(c=>c.nombre&&v.cliente&&c.nombre.trim().toUpperCase()===v.cliente.trim().toUpperCase());
+    if(cliFallback) cli=cliFallback;
+  }
   const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const obs=DB.config.observacionRecibo||'';
   const logo=DB.config.logoData||DB.config.logo||'';
