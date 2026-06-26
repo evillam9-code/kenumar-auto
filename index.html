@@ -8146,7 +8146,7 @@ function confirmarVenta(nf){
   const venta={
     id:uid(),factura:nf,fecha:document.getElementById('sv-fecha').value,
     vehiculoId:vid,vehiculo:`${v.marca} ${v.modelo} ${v.anio}`,codigo:v.codigo,
-    cliente:cliNombre,clienteId:cliId,
+    cliente:cliNombre,clienteId:cliId,clienteDireccion:cli?.direccion||'',clienteCiudad:cli?.ciudad||'',clienteDocumento:cli?.documento||'',clienteTipoDoc:cli?.tipoDoc||'',clienteTelefono:cli?.telefono||'',
     costoVehiculo:totalGastos,
     precioVenta:precio,
     ganancia:precio-totalGastos,
@@ -8657,177 +8657,176 @@ function imprimirFactura(vid){
   const obs=DB.config.observacionRecibo||'';
   const logo=DB.config.logoData||DB.config.logo||'';
   const rec=v.vehiculoRecibido;
-  const win=window.open('','_blank','width=860,height=800');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${escHtml(v.factura||'')} — ${escHtml(v.cliente||'')} — ${escHtml(v.codigo||'')} ${escHtml(v.vehiculo||'')}</title>
+  const cliNombre=cli?.nombre||v.cliente||'—';
+  const cliDoc=cli?.documento||v.clienteDocumento||'—';
+  const cliTel=cli?.telefono||v.clienteTelefono||'—';
+  const cliDir=cli?.direccion||v.clienteDireccion||'—';
+  const cliCiudad=cli?.ciudad||v.clienteCiudad||'';
+  const esUSD=v.moneda==='USD';
+  const fV=(n)=>esUSD?'USD $'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):'RD$ '+parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
+  const win=window.open('','_blank','width=860,height=920');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Factura ${escHtml(v.factura||'')} — ${escHtml(v.cliente||'')}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#0f172a;background:#fff}
-    .page{max-width:760px;margin:0 auto;padding:32px}
-    /* ENCABEZADO */
-    .hdr{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:4px solid #2563eb;margin-bottom:20px}
-    .hdr-logo{display:flex;align-items:center;gap:14px}
-    .logo-img{width:64px;height:64px;object-fit:contain;border-radius:8px}
-    .logo-placeholder{width:64px;height:64px;background:#2563eb;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:#fff}
-    .empresa-nombre{font-size:20px;font-weight:900;color:#0f172a;line-height:1.2}
-    .empresa-sub{font-size:11px;color:#6b7280;margin-top:3px}
-    .empresa-rnc{font-size:11px;color:#2563eb;font-weight:700;margin-top:2px}
-    .hdr-titulo{text-align:right}
-    .titulo-doc{font-size:22px;font-weight:900;color:#2563eb;text-transform:uppercase;letter-spacing:1px}
-    .titulo-sub{font-size:28px;font-weight:900;font-family:monospace;color:#0f172a;margin-top:2px}
-    .titulo-fecha{font-size:11px;color:#6b7280;margin-top:6px}
+    html,body{height:100%;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:Arial,sans-serif;font-size:11.5px;color:#111;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .page{
+      width:216mm;height:279mm;
+      margin:0 auto;
+      padding:12mm 14mm 10mm 14mm;
+      display:flex;flex-direction:column;
+      overflow:hidden;
+    }
+    .content{flex:1;display:flex;flex-direction:column}
+    /* HEADER */
+    .hdr{text-align:center;margin-bottom:6px}
+    .hdr img{max-height:100px;max-width:240px;object-fit:contain;display:block;margin:0 auto 4px}
+    .hdr-placeholder{font-size:24px;font-weight:900;color:#1a3a6b;letter-spacing:2px;margin-bottom:4px}
+    .hdr-sub{font-size:10.5px;color:#444;letter-spacing:1px}
+    .hdr-addr{font-size:10px;color:#555;margin-top:2px}
+    .div1{border:none;border-top:3.5px solid #1a3a6b;margin:6px 0 2px}
+    .div2{border:none;border-top:1px solid #1a3a6b;margin:2px 0 7px}
+    /* TÍTULO */
+    .title-row{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+    .main-title{font-size:16px;font-weight:900;color:#1a3a6b;text-transform:uppercase;letter-spacing:1.5px;flex:1;text-align:center;text-decoration:underline}
+    .num-box{text-align:right;min-width:140px}
+    .num-val{font-size:12px;font-weight:900;color:#1a3a6b}
+    .num-fecha{font-size:10px;color:#555;margin-top:2px}
     /* SECCIONES */
-    .sec{margin-bottom:16px}
-    .sec-titulo{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#fff;background:#0f172a;padding:5px 10px;border-radius:4px;margin-bottom:10px;display:inline-block}
-    .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
-    .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 12px}
-    .campo label{font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8;display:block;margin-bottom:2px}
-    .campo span{font-size:12px;font-weight:600;color:#0f172a;display:block;padding:4px 8px;background:#f8fafc;border-radius:4px;border-left:3px solid #2563eb}
-    .campo span.mono{font-family:monospace;font-size:11px}
-    /* VEHÍCULO RECIBIDO */
-    .rec-box{background:#f0fdf4;border:2px solid #16a34a;border-radius:8px;padding:12px;margin-top:8px}
-    .rec-titulo{font-size:10px;font-weight:800;text-transform:uppercase;color:#16a34a;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-    .rec-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
-    /* FINANCIERO */
-    .fin-tabla{width:100%;border-collapse:collapse;margin-top:4px}
-    .fin-tabla td{padding:8px 12px;border-bottom:1px solid #e2e8f0}
-    .fin-tabla .lbl{color:#475569;font-size:12px}
-    .fin-tabla .val{text-align:right;font-weight:700;font-size:13px}
-    .fin-total{background:#f0fdf4}
-    .fin-total td{padding:10px 12px;font-size:15px;font-weight:900;color:#16a34a;border-bottom:none}
-    .fin-pend{background:#fff1f2}
-    .fin-pend td{padding:10px 12px;font-size:14px;font-weight:900;color:#dc2626;border-bottom:none}
-    /* FIRMAS */
-    .firmas{display:grid;grid-template-columns:1fr 1fr;gap:60px;margin-top:48px}
-    .firma-item{text-align:center}
-    .firma-linea{border-top:2px solid #0f172a;padding-top:6px;font-size:11px;color:#475569}
-    .firma-nombre{font-size:13px;font-weight:700;color:#0f172a;margin-top:2px}
+    .sec-hdr{background:#cfe2f3;color:#000;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .sec-box{border:1.5px solid #1a3a6b;border-top:none;padding:5px 8px;margin-bottom:7px}
+    .cli-row{display:flex;gap:4px;margin-bottom:2px;font-size:11px;line-height:1.4}
+    .cli-lbl{font-weight:700;white-space:nowrap;min-width:95px}
+    /* TABLA VEHÍCULO */
+    table.veh{width:100%;border-collapse:collapse}
+    table.veh th{background:#cfe2f3;color:#000;font-size:10.5px;font-weight:700;text-transform:uppercase;padding:4px 7px;text-align:left;border:1px solid #a0bcd8;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    table.veh td{padding:4px 7px;border:1px solid #c0cfe0;font-size:11px}
+    table.veh tr:nth-child(even) td{background:#eef2f8}
+    /* CHASIS */
+    .chasis-row{display:flex;margin-bottom:7px}
+    .chasis-cell{border:1px solid #c0cfe0;border-top:none;padding:4px 8px;font-size:11px;flex:1}
+    .chasis-cell:not(:last-child){border-right:none}
+    .chasis-cell strong{display:block;font-size:9.5px;color:#1a3a6b;text-transform:uppercase;font-weight:700;margin-bottom:1px}
+    /* RECIBIDO */
+    .rec-row{display:flex;border:1.5px solid #1a3a6b;border-top:none;margin-bottom:7px}
+    .rec-cell{padding:5px 8px;font-size:11px;flex:1}
+    .rec-cell:not(:last-child){border-right:1px solid #c0cfe0}
+    .rec-cell strong{display:block;font-size:9.5px;color:#1a3a6b;text-transform:uppercase;font-weight:700;margin-bottom:1px}
     /* OBS */
-    .obs-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 12px;margin-top:12px;font-size:11px;color:#92400e}
-    /* PIE */
-    .pie{text-align:center;font-size:10px;color:#94a3b8;margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0}
-    .copy-divider{border:none;border-top:2px dashed #94a3b8;margin:18px 0 14px;position:relative}
-    .copy-divider::after{content:'✂ Cortar aquí';position:absolute;left:50%;top:-10px;transform:translateX(-50%);background:#fff;padding:0 10px;font-size:10px;color:#94a3b8;letter-spacing:1px}
-    .copy-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#94a3b8;text-align:center;margin-bottom:8px}
+    .obs-box{border:1.5px solid #1a3a6b;border-top:none;padding:6px 8px;margin-bottom:8px;font-size:11px;min-height:48px;line-height:1.7}
+    /* TOTALES */
+    .totales-wrap{display:flex;justify-content:flex-end;margin-bottom:10px}
+    .tot-table{border-collapse:collapse;min-width:255px}
+    .tot-table td{padding:5px 11px;font-size:12px;border-bottom:1px solid #dde4ee}
+    .tot-lbl{color:#333}
+    .tot-val{text-align:right;font-weight:700;color:#1a3a6b}
+    .tot-pend-row td{color:#b00;font-weight:900;font-size:13px}
+    .tot-total-row td{background:#1a3a6b;color:#fff;font-weight:900;font-size:14px;padding:6px 11px;border-bottom:none;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    /* FIRMAS — siempre al fondo */
+    .pie-wrap{margin-top:auto;padding-top:6px}
+    .firmas{display:flex;justify-content:space-around;padding-top:4px;margin-bottom:12px}
+    .firma-item{text-align:center;width:200px}
+    .firma-linea{border-top:1.5px solid #333;padding-top:5px;font-size:11px;color:#333;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .gracias{text-align:center;font-size:12px;font-weight:700;color:#1a3a6b;border-top:2.5px solid #1a3a6b;padding-top:6px;letter-spacing:.5px}
     @media print{
-      .np{display:none}
-      body{padding:0}
-      .page{padding:12px;max-width:100%}
-      .copy-wrap{page-break-inside:avoid}
-      .copy-divider{border-top:2px dashed #94a3b8;margin:10px 0 8px}
-      @page{size:letter portrait;margin:10mm}
+      .np{display:none!important}
+      html,body{height:100%;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .page{margin:0;padding:10mm 13mm 8mm 13mm;width:100%;height:100%}
+      @page{size:letter portrait;margin:0}
     }
   </style></head><body>
   <div class="page">
+  <div class="content">
 
-  <!-- ENCABEZADO -->
+  <!-- HEADER -->
   <div class="hdr">
-    <div class="hdr-logo">
-      ${logo?`<img src="${logo}" class="logo-img" alt="Logo">`:`<div class="logo-placeholder">${escHtml((DB.config.empresa||'D')[0])}</div>`}
-      <div>
-        <div class="empresa-nombre">${escHtml(DB.config.empresa||'DealerSystem')}</div>
-        <div class="empresa-sub">Venta de Vehículos</div>
-        ${DB.config.direccion?`<div class="empresa-sub">${escHtml(DB.config.direccion)}</div>`:''}
-        ${DB.config.telefono?`<div class="empresa-sub">Tel: ${escHtml(DB.config.telefono)}</div>`:''}
-        ${DB.config.rnc?`<div class="empresa-rnc">RNC: ${escHtml(DB.config.rnc)}</div>`:''}
-      </div>
-    </div>
-    <div class="hdr-titulo">
-      <div class="titulo-doc">Factura de Ventas</div>
-      <div style="font-size:11px;color:#6b7280;margin-top:6px;text-transform:uppercase;letter-spacing:1px">N° de Factura</div>
-      <div class="titulo-sub">${escHtml(v.factura||'')}</div>
-      <div class="titulo-fecha">Fecha: <strong>${fmtDate(v.fecha)}</strong></div>
+    ${logo
+      ?`<img src="${logo}" alt="${escHtml(DB.config.empresa||'')}">`
+      :`<div class="hdr-placeholder">${escHtml(DB.config.empresa||'KENUMAR')}</div>`}
+    ${DB.config.direccion||DB.config.telefono
+      ?`<div class="hdr-addr">${escHtml(DB.config.direccion||'')}${DB.config.direccion&&DB.config.telefono?' &nbsp;|&nbsp; ':''}${DB.config.telefono?'TEL: '+escHtml(DB.config.telefono):''}</div>`:''}
+    ${DB.config.rnc?`<div class="hdr-addr" style="color:#1a3a6b;font-weight:700">RNC: ${escHtml(DB.config.rnc)}</div>`:''}
+  </div>
+  <hr class="div1"><hr class="div2">
+
+  <!-- TÍTULO -->
+  <div class="title-row">
+    <div style="min-width:140px"></div>
+    <div class="main-title">FACTURA DE VENTA</div>
+    <div class="num-box">
+      <div class="num-val">N.° ${escHtml(v.factura||'')}</div>
+      <div class="num-fecha">${fmtDate(v.fecha)}</div>
     </div>
   </div>
 
   <!-- CLIENTE -->
-  <div class="sec">
-    <div class="sec-titulo">👤 Datos del Cliente</div>
-    <div class="g2">
-      <div class="campo"><label>Nombre Completo</label><span>${escHtml(cli?.nombre||v.cliente||'—')}</span></div>
-      <div class="campo"><label>Documento (${cli?.tipoDoc||'ID'})</label><span class="mono">${escHtml(cli?.documento||'—')}</span></div>
-      <div class="campo"><label>Teléfono</label><span>${escHtml(cli?.telefono||'—')}</span></div>
-      <div class="campo"><label>Dirección</label><span>${escHtml(cli?.direccion||'—')}</span></div>
-    </div>
+  <div class="sec-hdr">DATOS DEL CLIENTE</div>
+  <div class="sec-box">
+    <div class="cli-row"><span class="cli-lbl">Nombre:</span><span>${escHtml(cliNombre)}</span></div>
+    <div class="cli-row"><span class="cli-lbl">Cédula / RNC:</span><span>${escHtml(cliDoc)}</span></div>
+    <div class="cli-row"><span class="cli-lbl">Dirección:</span><span>${escHtml(cliDir)}</span></div>
+    ${cliCiudad?`<div class="cli-row"><span class="cli-lbl">Ciudad:</span><span>${escHtml(cliCiudad)}</span></div>`:''}
+    <div class="cli-row"><span class="cli-lbl">Teléfono:</span><span>${escHtml(cliTel)}</span></div>
   </div>
 
-  <!-- VEHÍCULO VENDIDO -->
-  <div class="sec">
-    <div class="sec-titulo">🚗 Datos del Vehículo Vendido</div>
-    <div class="g3">
-      <div class="campo"><label>Código</label><span class="mono">${escHtml(v.codigo||veh?.codigo||'—')}</span></div>
-      <div class="campo"><label>Marca / Modelo</label><span>${escHtml(v.vehiculo||'—')}</span></div>
-      <div class="campo"><label>Chasis / VIN</label><span class="mono">${escHtml(veh?.vin||'—')}</span></div>
-      <div class="campo"><label>Año</label><span>${veh?.anio||'—'}</span></div>
-      <div class="campo"><label>Color</label><span>${escHtml(veh?.color||'—')}</span></div>
-      <div class="campo"><label>Placa</label><span class="mono">${escHtml(veh?.placa||'EN TRÁMITE')}</span></div>
-      <div class="campo"><label>Método de Pago</label><span>${escHtml(v.metodoPago||'—')}</span></div>
-    </div>
+  <!-- VEHÍCULO -->
+  <div class="sec-hdr">VEHÍCULO</div>
+  <table class="veh">
+    <tr><th>MARCA</th><th>MODELO</th><th>AÑO</th><th>COLOR</th><th>PLACA</th></tr>
+    <tr>
+      <td>${escHtml(veh?.marca||'—')}</td>
+      <td>${escHtml(veh?.modelo||'—')}</td>
+      <td>${veh?.anio||'—'}</td>
+      <td>${escHtml(veh?.color||'—')}</td>
+      <td>${escHtml(veh?.placa||'EN TRÁMITE')}</td>
+    </tr>
+  </table>
+  <div class="chasis-row">
+    <div class="chasis-cell" style="flex:2"><strong>CHASIS / VIN</strong>${escHtml(veh?.vin||'—')}</div>
+    <div class="chasis-cell"><strong>MILLAJE</strong>${veh?.millas?parseFloat(veh.millas).toLocaleString('en-US'):'—'}</div>
   </div>
 
-  <!-- VEHÍCULO RECIBIDO (solo si aplica) -->
+  <!-- VEHÍCULO RECIBIDO -->
   ${rec?.vehiculo?`
-  <div class="sec">
-    <div class="rec-box">
-      <div class="rec-titulo">🔄 Vehículo Recibido como Parte de Pago</div>
-      <div class="rec-grid">
-        <div class="campo"><label>Marca / Modelo</label><span>${escHtml(rec.vehiculo)}</span></div>
-        <div class="campo"><label>Chasis / VIN</label><span class="mono">${escHtml(rec.vin||'—')}</span></div>
-        <div class="campo"><label>Placa</label><span class="mono">${escHtml(rec.placa||'—')}</span></div>
-      </div>
-    </div>
+  <div class="sec-hdr">VEHÍCULO RECIBIDO COMO PARTE DEL PAGO</div>
+  <div class="rec-row">
+    <div class="rec-cell" style="flex:2"><strong>MARCA / MODELO</strong>${escHtml(rec.vehiculo)}</div>
+    <div class="rec-cell"><strong>CHASIS / VIN</strong>${escHtml(rec.vin||'—')}</div>
+    <div class="rec-cell"><strong>PLACA</strong>${escHtml(rec.placa||'—')}</div>
   </div>`:''}
 
-  <!-- RESUMEN FINANCIERO -->
-  <div class="sec">
-    <div class="sec-titulo">💰 Resumen Financiero</div>
-    <table class="fin-tabla">
-      ${(()=>{
-        const esUSD=v.moneda==='USD';
-        const fV=(n)=>esUSD?'USD $'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):'RD$ '+parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
-        return`
-        <tr><td class="lbl">Precio de Venta</td><td class="val">${fV(v.precioVenta)}</td></tr>
-        <tr><td class="lbl">Inicial Recibido${rec?.vehiculo?' (incluye vehículo recibido)':''}</td><td class="val" style="color:#16a34a">${fV(v.inicial||0)}</td></tr>
-        ${parseFloat(v.pendiente||0)>0
-          ?`<tr class="fin-pend"><td>⚠️ PENDIENTE POR COBRAR</td><td class="val">${fV(v.pendiente)}</td></tr>`
-          :`<tr class="fin-total"><td>✅ PAGADO COMPLETAMENTE</td><td class="val">${fV(v.precioVenta)}</td></tr>`}`;
-      })()}
+  <!-- OBSERVACIÓN -->
+  <div class="sec-hdr">OBSERVACIÓN</div>
+  <div class="obs-box">${v.comentario?escHtml(v.comentario)+'<br>':''}${obs?escHtml(obs):''}</div>
+
+  <!-- TOTALES -->
+  <div class="totales-wrap">
+    <table class="tot-table">
+      <tr><td class="tot-lbl"><strong>Precio de Venta</strong></td><td class="tot-val"><strong>${fV(v.precioVenta)}</strong></td></tr>
+      <tr><td class="tot-lbl">Inicial Recibido</td><td class="tot-val">${fV(v.inicial||0)}</td></tr>
+      ${parseFloat(v.pendiente||0)>0
+        ?`<tr class="tot-pend-row"><td>⚠️ PENDIENTE POR COBRAR</td><td style="text-align:right">${fV(v.pendiente)}</td></tr>`
+        :''}
     </table>
   </div>
 
-  ${v.comentario?`<div class="obs-box" style="background:#eff6ff;border-color:#93c5fd;color:#1d4ed8;margin-bottom:6px">💬 <strong>Comentario:</strong> ${escHtml(v.comentario)}</div>`:''}
-  ${obs?`<div class="obs-box">📝 <strong>Observación:</strong> ${escHtml(obs)}</div>`:''}
-
-  <!-- FIRMAS -->
-  <div class="firmas">
-    <div class="firma-item">
-      <div style="height:50px"></div>
-      <div class="firma-linea">
-        <div class="firma-nombre">${escHtml(cli?.nombre||v.cliente||'Cliente')}</div>
-        Firma del Cliente
-      </div>
+  <!-- FIRMAS SIEMPRE AL FONDO -->
+  <div class="pie-wrap">
+    <div class="firmas">
+      <div class="firma-item"><div class="firma-linea">RECIBIDO POR</div></div>
+      <div class="firma-item"><div class="firma-linea">ATENDIDO POR</div></div>
     </div>
-    <div class="firma-item">
-      <div style="height:50px"></div>
-      <div class="firma-linea">
-        <div class="firma-nombre">${escHtml(DB.config.responsable||DB.config.empresa||'Empresa')}</div>
-        Firma Autorizada
-      </div>
-    </div>
+    <div class="gracias">¡GRACIAS POR CONFIAR EN NOSOTROS!</div>
   </div>
 
-  <div class="pie">
-    Documento generado el ${fmtDate(today())} &nbsp;|&nbsp; ${escHtml(DB.config.empresa||'DealerSystem')} &nbsp;|&nbsp; ${escHtml(DB.config.telefono||'')}
+  </div><!-- fin content -->
+  </div><!-- fin page -->
+
+  <div class="np" style="text-align:center;padding:14px">
+    <button onclick="window.print()" style="padding:10px 28px;background:#1a3a6b;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:700">🖨️ Imprimir / Guardar PDF</button>
   </div>
-
-  <div class="np" style="margin-top:24px;text-align:center">
-    <button onclick="window.print()" style="padding:10px 28px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:700">🖨️ Imprimir / Guardar PDF</button>
-  </div>
-
-  </div><!-- fin factura -->
-
   </body></html>`);
   win.document.close();
-  // Cerrar ventana tras imprimir o al cerrar manualmente
   win.onafterprint=()=>{ try{win.close();}catch(e){} };
   win.addEventListener('focus',()=>{ window.focus(); });
 }
