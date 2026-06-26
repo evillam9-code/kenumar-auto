@@ -8667,6 +8667,10 @@ function imprimirFactura(vid){
   const obs=DB.config.observacionRecibo||'';
   const logo=DB.config.logoData||DB.config.logo||'';
   const rec=v.vehiculoRecibido;
+  // DEBUG TEMPORAL — ver exactamente qué tiene el cliente
+  console.log('[FAC-DEBUG] venta.clienteId=', v.clienteId, '| venta.cliente=', v.cliente);
+  console.log('[FAC-DEBUG] cli encontrado=', cli ? JSON.stringify({id:cli.id,nombre:cli.nombre,direccion:cli.direccion,ciudad:cli.ciudad,documento:cli.documento}) : 'null');
+  console.log('[FAC-DEBUG] keys del cli=', cli ? Object.keys(cli).join(', ') : 'sin cli');
   const cliNombre=cli?.nombre||v.cliente||'—';
   const cliDoc=cli?.documento||v.clienteDocumento||'—';
   const cliTel=cli?.telefono||v.clienteTelefono||'—';
@@ -9278,8 +9282,8 @@ function formCliente(c){return`
   <div style="background:var(--gray2);border-radius:8px;padding:12px;margin-bottom:12px">
     <div style="font-size:12px;font-weight:700;margin-bottom:8px">👥 Contacto de Referencia</div>
     <div class="form-row c2" style="margin:0">
-      <div class="form-field" style="margin:0"><label class="required">Nombre</label><input type="text" id="c-ref-nombre" value="${escHtml(c?.refNombre||'')}" placeholder="Nombre del contacto de referencia"></div>
-      <div class="form-field" style="margin:0"><label class="required">Teléfono</label><input type="text" id="c-ref-tel" value="${escHtml(c?.refTel||'')}" maxlength="12" placeholder="000-000-0000" oninput="fmtTelInput(this)"></div>
+      <div class="form-field" style="margin:0"><label>Nombre</label><input type="text" id="c-ref-nombre" value="${escHtml(c?.refNombre||'')}" placeholder="Nombre del contacto de referencia"></div>
+      <div class="form-field" style="margin:0"><label>Teléfono</label><input type="text" id="c-ref-tel" value="${escHtml(c?.refTel||'')}" maxlength="12" placeholder="000-000-0000" oninput="fmtTelInput(this)"></div>
     </div>
   </div>
   <div class="form-row c2">
@@ -9315,8 +9319,7 @@ function guardarCliente(idx){
   const refTel=document.getElementById('c-ref-tel')?.value.trim()||'';
   const docVal=document.getElementById('c-doc').value.trim();
   if(!nombre){toast('El nombre es requerido','error');return;}
-  if(!refNombre){toast('El nombre de referencia es requerido','error');return;}
-  if(!refTel){toast('El teléfono de referencia es requerido','error');return;}
+
   // Validar duplicado por nombre
   const nombreDup=DB.clientes.find((c,i)=>c.nombre.toLowerCase()===nombre.toLowerCase()&&i!==idx);
   if(nombreDup){toast('Ya existe un cliente con ese nombre','error');return;}
