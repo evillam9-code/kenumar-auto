@@ -8652,10 +8652,17 @@ function guardarEditarVenta(vid){
 
 function imprimirFactura(vid){
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
-  // Buscar cliente por ID primero, luego por documento, luego por nombre
-  let cli=DB.clientes.find(c=>c.id===v.clienteId);
-  if(!cli) cli=DB.clientes.find(c=>c.documento&&v.clienteDocumento&&c.documento===v.clienteDocumento);
-  if(!cli) cli=DB.clientes.find(c=>c.nombre&&v.cliente&&c.nombre.trim().toUpperCase()===v.cliente.trim().toUpperCase());
+  // Buscar cliente: por ID, luego por documento, luego por nombre parcial
+  // En cada paso si el candidato tiene más datos (dirección) se prefiere
+  const _cliById   = DB.clientes.find(c=>c.id===v.clienteId);
+  const _cliByDoc  = DB.clientes.find(c=>c.documento&&v.clienteDocumento&&c.documento.trim()===v.clienteDocumento.trim());
+  const _cliByNom  = DB.clientes.find(c=>c.nombre&&v.cliente&&c.nombre.trim().toUpperCase()===v.cliente.trim().toUpperCase());
+  // Elegir el que tenga dirección, priorizando por ID
+  let cli = _cliById||_cliByDoc||_cliByNom||null;
+  if(cli&&!cli.direccion){
+    const withDir=_cliByDoc||_cliByNom;
+    if(withDir&&withDir.direccion) cli=withDir;
+  }
   const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const obs=DB.config.observacionRecibo||'';
   const logo=DB.config.logoData||DB.config.logo||'';
