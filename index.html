@@ -8652,12 +8652,10 @@ function guardarEditarVenta(vid){
 
 function imprimirFactura(vid){
   const v=DB.ventas.find(x=>x.id===vid);if(!v)return;
-  // Buscar cliente por ID, y si no tiene dirección buscar también por nombre
+  // Buscar cliente por ID primero, luego por documento, luego por nombre
   let cli=DB.clientes.find(c=>c.id===v.clienteId);
-  if(!cli||!cli.direccion) {
-    const cliFallback=DB.clientes.find(c=>c.nombre&&v.cliente&&c.nombre.trim().toUpperCase()===v.cliente.trim().toUpperCase());
-    if(cliFallback) cli=cliFallback;
-  }
+  if(!cli) cli=DB.clientes.find(c=>c.documento&&v.clienteDocumento&&c.documento===v.clienteDocumento);
+  if(!cli) cli=DB.clientes.find(c=>c.nombre&&v.cliente&&c.nombre.trim().toUpperCase()===v.cliente.trim().toUpperCase());
   const veh=DB.vehiculos.find(x=>x.id===v.vehiculoId);
   const obs=DB.config.observacionRecibo||'';
   const logo=DB.config.logoData||DB.config.logo||'';
@@ -8665,7 +8663,7 @@ function imprimirFactura(vid){
   const cliNombre=cli?.nombre||v.cliente||'—';
   const cliDoc=cli?.documento||v.clienteDocumento||'—';
   const cliTel=cli?.telefono||v.clienteTelefono||'—';
-  const cliDir=cli?.direccion||v.clienteDireccion||'—';
+  const cliDir=cli?.direccion||v.clienteDireccion||'';
   const cliCiudad=cli?.ciudad||v.clienteCiudad||'';
   const esUSD=v.moneda==='USD';
   const fV=(n)=>esUSD?'USD $'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):'RD$ '+parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
@@ -8769,7 +8767,7 @@ function imprimirFactura(vid){
   <div class="sec-box">
     <div class="cli-row"><span class="cli-lbl">Nombre:</span><span>${escHtml(cliNombre)}</span></div>
     <div class="cli-row"><span class="cli-lbl">Cédula / RNC:</span><span>${escHtml(cliDoc)}</span></div>
-    <div class="cli-row"><span class="cli-lbl">Dirección:</span><span>${escHtml(cliDir)}</span></div>
+    <div class="cli-row"><span class="cli-lbl">Dirección:</span><span>${escHtml(cliDir||'')}</span></div>
     ${cliCiudad?`<div class="cli-row"><span class="cli-lbl">Ciudad:</span><span>${escHtml(cliCiudad)}</span></div>`:''}
     <div class="cli-row"><span class="cli-lbl">Teléfono:</span><span>${escHtml(cliTel)}</span></div>
   </div>
@@ -8809,9 +8807,7 @@ function imprimirFactura(vid){
     <table class="tot-table">
       <tr><td class="tot-lbl"><strong>Precio de Venta</strong></td><td class="tot-val"><strong>${fV(v.precioVenta)}</strong></td></tr>
       <tr><td class="tot-lbl">Inicial Recibido</td><td class="tot-val">${fV(v.inicial||0)}</td></tr>
-      ${parseFloat(v.pendiente||0)>0
-        ?`<tr class="tot-pend-row"><td>⚠️ PENDIENTE POR COBRAR</td><td style="text-align:right">${fV(v.pendiente)}</td></tr>`
-        :''}
+      <tr class="tot-pend-row"><td>⚠️ PENDIENTE POR COBRAR</td><td style="text-align:right">${fV(v.pendiente||0)}</td></tr>
     </table>
   </div>
 
