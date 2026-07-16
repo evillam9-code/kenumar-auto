@@ -1111,6 +1111,16 @@ function renderFeria(){
             <textarea id="fa-carfax" rows="3" placeholder="Ej: Título limpio, sin accidentes..."></textarea>
           </div>
           <div class="form-field">
+            <label>📄 Archivo Carfax (PDF o imagen)</label>
+            <input type="file" id="fa-carfax-file" accept=".jpg,.jpeg,.png,.pdf" data-current="" onchange="cargarArchivoVeh('fa-carfax-file','fa-carfax-file-prev','fa-carfax-file-actions')">
+            <div id="fa-carfax-file-prev"></div>
+            <div id="fa-carfax-file-actions" style="display:none;gap:6px;margin-top:6px">
+              <button type="button" onclick="verArchivoVeh('fa-carfax-file')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid var(--gray3);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer;font-weight:600">👁️ Ver</button>
+              <button type="button" onclick="limpiarArchivoVeh('fa-carfax-file','fa-carfax-file-prev','fa-carfax-file-actions')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;cursor:pointer;font-weight:600">✕ Quitar</button>
+            </div>
+            <div style="font-size:10px;color:var(--gray);margin-top:4px">Este archivo se ve en la Vista Vendedor y se borra automáticamente al registrar la venta del vehículo.</div>
+          </div>
+          <div class="form-field">
             <label>🎁 Beneficios de feria</label>
             <div id="fa-beneficios"></div>
             <button type="button" onclick="feriaAddBeneficio()" style="width:100%;padding:8px;border:1.5px dashed #94a3b8;background:none;border-radius:8px;font-size:12px;font-weight:600;color:#475569;cursor:pointer;margin-top:6px">+ Agregar beneficio</button>
@@ -1540,6 +1550,7 @@ function feriaCargarVehiculo(vid){
     +'<div style="font-size:22px;font-weight:900;color:var(--navy);margin-bottom:14px">'+escHtml(v.marca+' '+v.modelo+' '+v.anio)+'</div>'
     +priceBox
     +techGrid
+    +(v.carfax?'<button class="btn btn-secondary" style="width:100%;margin-bottom:12px" onclick="abrirArchivoVehiculo(\''+vid+'\',\'carfax\')">📄 Ver Carfax</button>':'')
     +(ex.carfax?'<div onclick="feriaToggleAcc(\'carfax\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:14px;font-weight:700;cursor:pointer;border-top:1px solid var(--gray3)">🛡️ Historial Carfax Completo <span id="ico-carfax">▼</span></div>'
       +'<div id="feria-carfax" style="display:none;padding-bottom:12px;font-size:13px;color:var(--gray);line-height:1.6">'+escHtml(ex.carfax)+'</div>':'')
     +(ex.ventajas?'<div onclick="feriaToggleAcc(\'ventajas\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;font-size:14px;font-weight:700;cursor:pointer;border-top:1px solid var(--gray3)">💎 Ventajas Comerciales <span id="ico-ventajas">▼</span></div>'
@@ -1710,6 +1721,18 @@ function feriaSelAdmin(vid, el){
   set('fa-ventajas', ex.ventajas||'');
   set('fa-carfax', ex.carfax||'');
 
+  // Archivo Carfax: vive en el propio vehículo (v.carfax), no en los extras de feria,
+  // así queda sincronizado con lo que se sube desde Registro de Vehículo.
+  const carfaxInput=document.getElementById('fa-carfax-file');
+  const carfaxPrev=document.getElementById('fa-carfax-file-prev');
+  const carfaxActions=document.getElementById('fa-carfax-file-actions');
+  if(carfaxInput){
+    carfaxInput.value='';
+    carfaxInput.dataset.current=v?.carfax||'';
+    if(carfaxPrev)carfaxPrev.innerHTML=archivoVehHtml(v?.carfax);
+    if(carfaxActions)carfaxActions.style.display=v?.carfax?'flex':'none';
+  }
+
   // Beneficios
   const ba=document.getElementById('fa-beneficios');
   if(ba)ba.innerHTML=(ex.beneficios&&ex.beneficios.length?ex.beneficios:['']).map(b=>`<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center"><input type="text" value="${escHtml(b)}" style="flex:1;padding:8px 10px;border:1.5px solid var(--gray3);border-radius:6px;font-size:13px"><button type="button" onclick="this.closest('div').remove()" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px">×</button></div>`).join('');
@@ -1759,6 +1782,15 @@ function feriaGuardarExtras(){
     extras:extrasArr
   };
   sDB('feria');
+
+  // El archivo de Carfax se guarda en el vehículo (no en los extras de feria)
+  // para que quede sincronizado con Registro de Vehículo.
+  const vCarfax=DB.vehiculos.find(x=>x.id===vid);
+  if(vCarfax){
+    vCarfax.carfax=document.getElementById('fa-carfax-file')?.dataset.current||'';
+    sDB('vehiculos');
+  }
+
   toast('✅ Extras guardados correctamente','success');
   // Refrescar solo el selector sin resetear toda la página
   const adminSel=document.getElementById('feria-admin-veh-sel');
@@ -2405,6 +2437,87 @@ function previewFoto(inputId,prevId){
   reader.readAsDataURL(file);
 }
 
+function archivoVehHtml(url){
+  if(!url)return '';
+  if(url.indexOf('data:application/pdf')===0)return '<div style="display:flex;align-items:center;gap:6px;background:#f1f5f9;border-radius:6px;padding:8px;font-size:12px;font-weight:600;color:#475569;margin-top:6px">📄 Documento PDF cargado</div>';
+  return '<img src="'+url+'" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:6px">';
+}
+function cargarArchivoVeh(inputId,prevId,actionsId){
+  const inputEl=document.getElementById(inputId);
+  const file=inputEl?.files[0];
+  const prev=document.getElementById(prevId);
+  const actions=document.getElementById(actionsId);
+  if(!file)return;
+  const allowed=['image/jpeg','image/jpg','image/png','application/pdf'];
+  if(!allowed.includes(file.type)){toast('Solo se permiten archivos JPG, PNG o PDF','error');inputEl.value='';return;}
+  const esPDF=file.type==='application/pdf';
+  // Los PDF no se pueden comprimir en el navegador, así que deben venir livianos.
+  // Las imágenes sí se comprimen abajo, por eso admiten un original más grande.
+  const maxOriginal=esPDF?2*1024*1024:15*1024*1024;
+  if(file.size>maxOriginal){toast('El archivo es muy grande (máx. '+(esPDF?'2MB para PDF':'15MB para imágenes')+')','error');inputEl.value='';return;}
+  if(esPDF){
+    const reader=new FileReader();
+    reader.onload=e=>{
+      inputEl.dataset.current=e.target.result;
+      if(prev)prev.innerHTML=archivoVehHtml(inputEl.dataset.current);
+      if(actions)actions.style.display='flex';
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const MAX=1200;
+      let w=img.width,h=img.height;
+      if(w>MAX||h>MAX){if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;}}
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      let compressed=canvas.toDataURL('image/jpeg',0.75);
+      if(compressed.length>2*1024*1024)compressed=canvas.toDataURL('image/jpeg',0.5);
+      inputEl.dataset.current=compressed;
+      if(prev)prev.innerHTML=archivoVehHtml(compressed);
+      if(actions)actions.style.display='flex';
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function abrirDataUrl(url){
+  if(!url)return;
+  if(url.indexOf('data:')!==0){window.open(url,'_blank');return;}
+  try{
+    const partes=url.split(',');
+    const mimeMatch=partes[0].match(/:(.*?);/);
+    const mime=mimeMatch?mimeMatch[1]:'application/octet-stream';
+    const bstr=atob(partes[1]);
+    let n=bstr.length;
+    const u8arr=new Uint8Array(n);
+    while(n--){u8arr[n]=bstr.charCodeAt(n);}
+    const blobUrl=URL.createObjectURL(new Blob([u8arr],{type:mime}));
+    window.open(blobUrl,'_blank');
+  }catch(e){
+    window.open(url,'_blank');
+  }
+}
+function abrirArchivoVehiculo(vehId,campo){
+  const v=DB.vehiculos.find(x=>x.id===vehId);
+  if(v&&v[campo])abrirDataUrl(v[campo]);
+}
+function verArchivoVeh(inputId){
+  abrirDataUrl(document.getElementById(inputId)?.dataset.current);
+}
+function limpiarArchivoVeh(inputId,prevId,actionsId){
+  const input=document.getElementById(inputId);
+  const prev=document.getElementById(prevId);
+  const actions=document.getElementById(actionsId);
+  if(input){input.value='';input.dataset.current='';}
+  if(prev)prev.innerHTML='';
+  if(actions)actions.style.display='none';
+}
+
 let invSelectedId=null;
 function seleccionarVehiculo(id,tr){
   invSelectedId=id;
@@ -2500,14 +2613,21 @@ function renderConsultas(){
   _renderConsultasTabla();
 }
 function _consultasDatos(){
+  const tasa=parseFloat(DB.config.tasaCambio||60);
   return DB.vehiculos.map(v=>{
     const venta=DB.ventas.find(x=>x.vehiculoId===v.id);
     const cxcVenta=venta?(DB.cxc||[]).find(c=>c.ventaId===venta.id&&!c.esTraspaso):null;
     const cxcTrasp=venta?(DB.cxc||[]).find(c=>c.ventaId===venta.id&&c.esTraspaso):null;
     const gastosVeh=(DB.gastosVehiculos||[]).filter(g=>g.vehiculoId===v.id);
-    const totalCostos=gastosVeh.reduce((a,g)=>a+parseFloat(g.montoFactura||g.monto||0),0);
+    const cxpRel=(DB.cxp||[]).filter(g=>g.vehiculoId===v.id);
+    // Convertir cada gasto/cxp a RD$ según su propia moneda antes de sumar
+    const totalCostos=[...gastosVeh,...cxpRel].reduce((a,g)=>{
+      const monto=parseFloat(g.montoFactura||g.monto||0);
+      return a+(g.moneda==='USD'?monto*tasa:monto);
+    },0);
     const seguro=(DB.seguros||[]).find(s=>s.vehiculoId===v.id);
-    const beneficio=venta?parseFloat(venta.precioVenta||0)-totalCostos:null;
+    const precioVentaRD=venta?(venta.moneda==='USD'?parseFloat(venta.precioVenta||0)*(venta.tasaCambio||tasa):parseFloat(venta.precioVenta||0)):0;
+    const beneficio=venta?precioVentaRD-totalCostos:null;
     let estadoDinamico=v.status||'—';
     if(venta){
       const pendVenta=cxcVenta?parseFloat(cxcVenta.saldo||0):0;
@@ -2680,12 +2800,20 @@ function _abrirFichaConTasa(vehiculoId, tasaUsada){
   const gastosVeh=(DB.gastosVehiculos||[]).filter(g=>g.vehiculoId===v.id);
   const cxpRel=(DB.cxp||[]).filter(g=>g.vehiculoId===v.id);
   const seguro=(DB.seguros||[]).find(s=>s.vehiculoId===v.id);
-  const totalCostos=gastosVeh.reduce((a,g)=>a+parseFloat(g.montoFactura||g.monto||0),0)+cxpRel.reduce((a,g)=>a+parseFloat(g.montoFactura||0),0);
-  const totalCostosPagado=gastosVeh.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0)+cxpRel.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0);
-  const totalCostosPend=totalCostos-totalCostosPagado;
   const empresa=DB.config.empresa||'KENUMAR';
   const logo=DB.config.logoData||DB.config.logo||'';
   const tasa=tasaUsada||parseFloat(DB.config.tasaCambio||60);
+  // Separar costos por moneda para no mezclar RD$ y USD sin convertir
+  const itemsCostos=[...gastosVeh,...cxpRel];
+  const itemsCostosRD=itemsCostos.filter(g=>(g.moneda||'RD$')!=='USD');
+  const itemsCostosUSD=itemsCostos.filter(g=>g.moneda==='USD');
+  const totFactRD=itemsCostosRD.reduce((a,g)=>a+parseFloat(g.montoFactura||g.monto||0),0);
+  const totPagRD=itemsCostosRD.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0);
+  const totFactUSD=itemsCostosUSD.reduce((a,g)=>a+parseFloat(g.montoFactura||g.monto||0),0);
+  const totPagUSD=itemsCostosUSD.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0);
+  const totalCostos=totFactRD+(totFactUSD*tasa);
+  const totalCostosPagado=totPagRD+(totPagUSD*tasa);
+  const totalCostosPend=totalCostos-totalCostosPagado;
   const esUSD=venta&&venta.moneda==='USD';
   const precioVentaRD=esUSD?parseFloat(venta.precioVenta||0)*tasa:parseFloat(venta?.precioVenta||0);
   const beneficio=venta?precioVentaRD-totalCostos:null;
@@ -2703,8 +2831,19 @@ function _abrirFichaConTasa(vehiculoId, tasaUsada){
     const fVcxc=n=>esUSDcxc?'US$ '+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):fmt(n);
     return'<div class=\"sec\"><div class=\"sec-titulo\" style=\"background:'+color+'\">'+titulo+'</div><div class=\"resumen\"><div class=\"resumen-row\"><span>Total</span><span style=\"font-weight:700\">'+fVcxc(cxc.total||0)+'</span></div><div class=\"resumen-row\"><span>Cobrado</span><span style=\"color:#16a34a;font-weight:700\">'+fVcxc(cxc.abonado||0)+'</span></div><div class=\"resumen-row\"><span>'+(parseFloat(cxc.saldo||0)>0?'⏳ Pendiente':'✅ Saldado')+'</span><span style=\"font-weight:800;color:'+(parseFloat(cxc.saldo||0)>0?'#dc2626':'#16a34a')+'\">'+fVcxc(cxc.saldo||0)+'</span></div></div>'+(pagos.length?'<table style=\"margin-top:6px\"><thead><tr><th>Fecha</th><th>Monto</th><th>Cuenta</th><th>Nota</th></tr></thead><tbody>'+pagos.map(p=>'<tr><td>'+fmtDate(p.fecha)+'</td><td style=\"font-weight:700;color:#16a34a\">'+fVcxc(p.monto)+'</td><td>'+escHtml(p.cuenta||'—')+'</td><td>'+escHtml(p.nota||'—')+'</td></tr>').join('')+'</tbody></table>':'<div style=\"font-size:11px;color:#94a3b8;padding:6px\">Sin pagos registrados</div>')+'</div>';
   };
-  const items=[...gastosVeh,...cxpRel];
-  const tabCostosHtml='<div class=\"sec\"><div class=\"sec-titulo\" style=\"background:#0f172a\">🧾 Costos / Gastos del Vehículo</div><div class=\"resumen\"><div class=\"resumen-row\"><span>Total Costos</span><span style=\"font-weight:700\">'+fmt(totalCostos)+'</span></div><div class=\"resumen-row\"><span>Pagado</span><span style=\"color:#16a34a;font-weight:700\">'+fmt(totalCostosPagado)+'</span></div><div class=\"resumen-row\"><span>'+(totalCostosPend>0?'⏳ Pendientes':'✅ Saldados')+'</span><span style=\"font-weight:800;color:'+(totalCostosPend>0?'#dc2626':'#16a34a')+'\">'+fmt(totalCostosPend)+'</span></div></div>'+(items.length?'<table style=\"margin-top:6px\"><thead><tr><th>Tipo</th><th>Suplidor</th><th>Factura</th><th>Pagado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>'+items.map(g=>'<tr><td>'+escHtml(g.tipo||g.descripcion||'—')+'</td><td>'+escHtml(g.suplidor||'—')+'</td><td style=\"font-weight:700\">'+fmt(g.montoFactura||g.monto||0)+'</td><td style=\"color:#16a34a\">'+fmt(g.montoPagado||0)+'</td><td style=\"color:'+(parseFloat(g.montoPendiente||0)>0?'#dc2626':'#16a34a')+'\">'+fmt(g.montoPendiente||0)+'</td><td>'+(g.statusGasto||'—')+'</td></tr>').join('')+'</tbody></table>':'<div style=\"font-size:11px;color:#94a3b8;padding:6px\">Sin costos</div>')+'</div>';
+  const fmtUSDg=(n)=>'US$ '+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2});
+  const filaCosto=(g)=>{
+    const esUg=g.moneda==='USD';
+    const fV=esUg?fmtUSDg:fmt;
+    return'<tr><td>'+escHtml(g.tipo||g.descripcion||'—')+'</td><td>'+escHtml(g.suplidor||'—')+'</td><td style=\"font-weight:700\">'+fV(g.montoFactura||g.monto||0)+'</td><td style=\"color:#16a34a\">'+fV(g.montoPagado||0)+'</td><td style=\"color:'+(parseFloat(g.montoPendiente||0)>0?'#dc2626':'#16a34a')+'\">'+fV(g.montoPendiente||0)+'</td><td>'+(g.statusGasto||'—')+'</td></tr>';
+  };
+  const tabCostosHtml='<div class=\"sec\"><div class=\"sec-titulo\" style=\"background:#0f172a\">🧾 Costos / Gastos del Vehículo</div><div class=\"resumen\">'
+    +(itemsCostosRD.length?'<div class=\"resumen-row\"><span>Subtotal RD$</span><span style=\"font-weight:700\">'+fmt(totFactRD)+'</span></div>':'')
+    +(itemsCostosUSD.length?'<div class=\"resumen-row\"><span>Subtotal USD</span><span style=\"font-weight:700;color:#2563eb\">'+fmtUSDg(totFactUSD)+' <span style=\"color:#94a3b8;font-weight:400\">(≈ '+fmt(totFactUSD*tasa)+')</span></span></div>':'')
+    +'<div class=\"resumen-row\"><span style=\"font-weight:800\">TOTAL GENERAL RD$</span><span style=\"font-weight:800\">'+fmt(totalCostos)+'</span></div>'
+    +'<div class=\"resumen-row\"><span>Pagado</span><span style=\"color:#16a34a;font-weight:700\">'+fmt(totalCostosPagado)+'</span></div>'
+    +'<div class=\"resumen-row\"><span>'+(totalCostosPend>0?'⏳ Pendientes':'✅ Saldados')+'</span><span style=\"font-weight:800;color:'+(totalCostosPend>0?'#dc2626':'#16a34a')+'\">'+fmt(totalCostosPend)+'</span></div>'
+    +'</div>'+(itemsCostos.length?'<table style=\"margin-top:6px\"><thead><tr><th>Tipo</th><th>Suplidor</th><th>Factura</th><th>Pagado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>'+itemsCostos.map(filaCosto).join('')+'</tbody></table>':'<div style=\"font-size:11px;color:#94a3b8;padding:6px\">Sin costos</div>')+'</div>';
   const tabSeguroHtml=seguro?'<div class=\"sec\"><div class=\"sec-titulo\" style=\"background:#0e7490\">🛡️ Seguro</div><div class=\"resumen\"><div class=\"resumen-row\"><span>Compañía</span><span style=\"font-weight:700\">'+escHtml(seguro.compania||'—')+'</span></div><div class=\"resumen-row\"><span>Póliza</span><span>'+escHtml(seguro.poliza||'—')+'</span></div><div class=\"resumen-row\"><span>Vigencia</span><span>'+fmtDate(seguro.desde)+' a '+fmtDate(seguro.hasta)+'</span></div><div class=\"resumen-row\"><span>Prima</span><span style=\"font-weight:700\">'+fmt(seguro.prima||0)+'</span></div></div></div>':'';
   
   const precioVentaStr=esUSD
@@ -2942,14 +3081,30 @@ function formVehiculo(v){
       <div class="form-field"><label class="required">Chasis / VIN</label><input type="text" id="v-vin" value="${escHtml(v?.vin||'')}" placeholder="Número de chasis o VIN" maxlength="17" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="form-field"><label>Placa</label><input type="text" id="v-placa" value="${escHtml(v?.placa||'')}" placeholder="A000000" maxlength="7" style="text-transform:uppercase" oninput="fmtPlaca(this)"></div>
     </div>
-    <div class="form-row c2">
+    <div class="form-row c3">
       <div class="form-field"><label>📋 BL (Bill of Lading)</label>
-        <input type="file" id="v-foto" accept=".jpg,.jpeg,.png,.pdf" onchange="previewFoto('v-foto','v-foto-prev')">
-        <img id="v-foto-prev" src="${v?.foto||''}" style="display:${v?.foto?'block':'none'};width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:6px">
+        <input type="file" id="v-foto" accept=".jpg,.jpeg,.png,.pdf" data-current="${v?.foto||''}" onchange="cargarArchivoVeh('v-foto','v-foto-prev','v-foto-actions')">
+        <div id="v-foto-prev">${archivoVehHtml(v?.foto)}</div>
+        <div id="v-foto-actions" style="display:${v?.foto?'flex':'none'};gap:6px;margin-top:6px">
+          <button type="button" onclick="verArchivoVeh('v-foto')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid var(--gray3);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer;font-weight:600">👁️ Ver</button>
+          <button type="button" onclick="limpiarArchivoVeh('v-foto','v-foto-prev','v-foto-actions')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;cursor:pointer;font-weight:600">✕ Quitar</button>
+        </div>
       </div>
       <div class="form-field"><label>📄 Carfax</label>
-        <input type="file" id="v-carfax" accept=".jpg,.jpeg,.png,.pdf" onchange="previewFoto('v-carfax','v-carfax-prev')">
-        <img id="v-carfax-prev" src="${v?.carfax||''}" style="display:${v?.carfax?'block':'none'};width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin-top:6px">
+        <input type="file" id="v-carfax" accept=".jpg,.jpeg,.png,.pdf" data-current="${v?.carfax||''}" onchange="cargarArchivoVeh('v-carfax','v-carfax-prev','v-carfax-actions')">
+        <div id="v-carfax-prev">${archivoVehHtml(v?.carfax)}</div>
+        <div id="v-carfax-actions" style="display:${v?.carfax?'flex':'none'};gap:6px;margin-top:6px">
+          <button type="button" onclick="verArchivoVeh('v-carfax')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid var(--gray3);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer;font-weight:600">👁️ Ver</button>
+          <button type="button" onclick="limpiarArchivoVeh('v-carfax','v-carfax-prev','v-carfax-actions')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;cursor:pointer;font-weight:600">✕ Quitar</button>
+        </div>
+      </div>
+      <div class="form-field"><label>🖨️ Printer</label>
+        <input type="file" id="v-printer" accept=".jpg,.jpeg,.png,.pdf" data-current="${v?.printer||''}" onchange="cargarArchivoVeh('v-printer','v-printer-prev','v-printer-actions')">
+        <div id="v-printer-prev">${archivoVehHtml(v?.printer)}</div>
+        <div id="v-printer-actions" style="display:${v?.printer?'flex':'none'};gap:6px;margin-top:6px">
+          <button type="button" onclick="verArchivoVeh('v-printer')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid var(--gray3);border-radius:6px;background:#fff;color:var(--blue);cursor:pointer;font-weight:600">👁️ Ver</button>
+          <button type="button" onclick="limpiarArchivoVeh('v-printer','v-printer-prev','v-printer-actions')" style="flex:1;font-size:11px;padding:5px 8px;border:1px solid #fca5a5;border-radius:6px;background:#fff;color:#dc2626;cursor:pointer;font-weight:600">✕ Quitar</button>
+        </div>
       </div>
     </div>
     <div class="form-row c2">
@@ -2987,8 +3142,6 @@ function guardarVehiculo(id){
   const _activos=['ACTIVO','ADUANA','EN EEUU','TRÁNSITO'];
   const vinDup=DB.vehiculos.find(v=>v.vin&&v.vin.toUpperCase()===vin.toUpperCase()&&v.id!==id&&_activos.includes(v.status));
   if(vinDup){toast('⚠️ Chasis duplicado: '+vinDup.codigo+' — '+vinDup.marca+' '+vinDup.modelo+' ['+vinDup.status+']','error');return;}
-  const fotoEl=document.getElementById('v-foto-prev');
-  const carfaxEl=document.getElementById('v-carfax-prev');
   const obj={
     id:id||uid(),codigo:cod,propietario:prop,marca,modelo,
     tipo:document.getElementById('v-tipo').value,
@@ -3000,8 +3153,9 @@ function guardarVehiculo(id){
     tipoCompra:document.getElementById('v-tipo-compra').value,
     fecha:document.getElementById('v-fecha').value,
     vin,placa:document.getElementById('v-placa').value,
-    foto:fotoEl?.style.display!=='none'&&fotoEl?.src?fotoEl.src:(id?DB.vehiculos.find(x=>x.id===id)?.foto||'':''),
-    carfax:carfaxEl?.style.display!=='none'&&carfaxEl?.src?carfaxEl.src:(id?DB.vehiculos.find(x=>x.id===id)?.carfax||'':''),
+    foto:document.getElementById('v-foto')?.dataset.current||'',
+    carfax:document.getElementById('v-carfax')?.dataset.current||'',
+    printer:document.getElementById('v-printer')?.dataset.current||'',
     notas:document.getElementById('v-notas').value
   };
   if(id){
@@ -3083,7 +3237,7 @@ function verVehiculo(id){
   const i=DB.vehiculos.findIndex(x=>x.id===id);
   const totalGastos=(DB.gastosVehiculos||[]).filter(g=>g.vehiculoId===id).reduce((a,g)=>a+parseFloat(g.monto||0),0);
   openModal(`${v.marca} ${v.modelo} ${v.anio}`,`
-    ${v.foto?`<img src="${v.foto}" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:14px">`:''}
+    ${v.foto&&v.foto.indexOf('data:application/pdf')!==0?`<img src="${v.foto}" style="width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:14px">`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
       <div><div style="font-size:10px;color:var(--gray);font-weight:700;text-transform:uppercase">Código</div><div style="font-family:monospace;font-weight:700">${escHtml(v.codigo||'—')}</div></div>
       <div><div style="font-size:10px;color:var(--gray);font-weight:700;text-transform:uppercase">Propietario</div><div style="font-weight:600">${escHtml(v.propietario||'—')}</div></div>
@@ -3097,8 +3251,9 @@ function verVehiculo(id){
       <div><div style="font-size:10px;color:var(--gray);font-weight:700;text-transform:uppercase">Estado</div><div><span class="badge ${v.status==='ACTIVO'?'badge-green':v.status==='VENDIDO'?'badge-blue':v.status==='TRÁNSITO'?'badge-purple':'badge-amber'}">${v.status}</span></div></div>
     </div>`,
     `<button class="btn btn-secondary" onclick="closeModal()">Cerrar</button>
-     ${v.foto?`<button class="btn btn-secondary" onclick="window.open('${v.foto}','_blank')">📋 BL</button>`:''}
-     ${v.carfax?`<button class="btn btn-secondary" onclick="window.open('${v.carfax}','_blank')">📄 Carfax</button>`:''}
+     ${v.foto?`<button class="btn btn-secondary" onclick="abrirArchivoVehiculo('${id}','foto')">📋 BL</button>`:''}
+     ${v.carfax?`<button class="btn btn-secondary" onclick="abrirArchivoVehiculo('${id}','carfax')">📄 Carfax</button>`:''}
+     ${v.printer?`<button class="btn btn-secondary" onclick="abrirArchivoVehiculo('${id}','printer')">🖨️ Printer</button>`:''}
      <button class="btn btn-amber" onclick="closeModal();gastosVehiculo('${id}')">💸 Gastos de Vehículo</button>
      <button class="btn btn-green btn-sm" onclick="closeModal();imprimirHojaSalida('${id}')">📋 Hoja Salida</button>
      <button class="btn btn-secondary btn-sm" onclick="closeModal();imprimirLavadoActivos('${id}')">🔍 Lavado Activos</button>
@@ -8506,6 +8661,7 @@ function confirmarVenta(nf){
     DB.vehiculos[vi].status='TRÁNSITO';
     DB.vehiculos[vi].fechaVenta=venta.fecha;
     DB.vehiculos[vi].precioVentaFinal=precio;
+    DB.vehiculos[vi].carfax=''; // El Carfax ya no es necesario una vez vendido el vehículo
     sDB('vehiculos');
   }
   // Registrar en caja
@@ -8982,8 +9138,9 @@ function imprimirFactura(vid){
     .num-fecha{font-size:10px;color:#555;margin-top:2px}
     /* SECCIONES */
     .sec-hdr{background:#cfe2f3;color:#000;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .sec-box{border:1.5px solid #1a3a6b;border-top:none;padding:5px 8px;margin-bottom:7px}
-    .cli-row{display:flex;gap:4px;margin-bottom:2px;font-size:11px;line-height:1.4}
+    .sec-hdr-veh{margin-top:16px}
+    .sec-box{border:1.5px solid #1a3a6b;border-top:none;padding:8px 10px;margin-bottom:10px}
+    .cli-row{display:flex;gap:4px;margin-bottom:5px;font-size:11px;line-height:1.4}
     .cli-lbl{font-weight:700;white-space:nowrap;min-width:95px}
     /* TABLA VEHÍCULO */
     table.veh{width:100%;border-collapse:collapse}
@@ -9003,7 +9160,7 @@ function imprimirFactura(vid){
     /* OBS */
     .obs-box{border:1.5px solid #1a3a6b;border-top:none;padding:6px 8px;margin-bottom:8px;font-size:11px;min-height:48px;line-height:1.7}
     /* TOTALES */
-    .totales-wrap{display:flex;justify-content:flex-end;margin-bottom:10px}
+    .totales-wrap{display:flex;justify-content:flex-end;margin-top:18px;margin-bottom:10px}
     .tot-table{border-collapse:collapse;min-width:255px}
     .tot-table td{padding:5px 11px;font-size:12px;border-bottom:1px solid #dde4ee}
     .tot-lbl{color:#333}
@@ -9058,7 +9215,7 @@ function imprimirFactura(vid){
   </div>
 
   <!-- VEHÍCULO -->
-  <div class="sec-hdr">VEHÍCULO</div>
+  <div class="sec-hdr sec-hdr-veh">VEHÍCULO</div>
   <table class="veh">
     <tr><th>MARCA</th><th>MODELO</th><th>AÑO</th><th>COLOR</th><th>PLACA</th></tr>
     <tr>
