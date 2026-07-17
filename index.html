@@ -9571,7 +9571,8 @@ function guardarCotizacion(idx){
   if(!doc){toast('El documento es requerido','error');return;}
   if(!banco){toast('Selecciona la entidad bancaria','error');return;}
   if(!precio){toast('El monto es requerido','error');return;}
-  const vidSel=document.getElementById('cot-veh').value;
+  const vehEl=document.getElementById('cot-veh');
+  const vidSel=vehEl?vehEl.value:(idx!==undefined?DB.cotizaciones[idx].vehiculoId:'');
   const vObj=vidSel?DB.vehiculos.find(v=>v.id===vidSel):null;
   const cot={id:idx!==undefined?DB.cotizaciones[idx].id:uid(),
     fecha:document.getElementById('cot-fecha').value,
