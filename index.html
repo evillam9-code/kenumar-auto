@@ -9501,7 +9501,10 @@ function nuevaCotizacion(){
     <div class="form-row c3">
       <div class="form-field"><label>Teléfono</label><input type="text" id="cot-tel" maxlength="12" placeholder="000-000-0000" oninput="fmtTelInput(this)"></div>
       <div class="form-field"><label class="required">Entidad Bancaria</label>
-        <select id="cot-banco"><option value="">Seleccionar...</option>${bancos.map(b=>`<option>${escHtml(b)}</option>`).join('')}</select>
+        <div style="display:flex;gap:4px">
+          <select id="cot-banco" style="flex:1"><option value="">Seleccionar...</option>${bancos.map(b=>`<option>${escHtml(b)}</option>`).join('')}</select>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="agregarBancoCotizacionRapida()" title="Agregar entidad bancaria nueva" style="white-space:nowrap">➕</button>
+        </div>
       </div>
       <div class="form-field"><label>Fecha</label><input type="date" id="cot-fecha" value="${today()}"></div>
     </div>
@@ -9538,6 +9541,26 @@ function llenarInfoCotizacion(vid){
     <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Color</div><div>${escHtml(v.color||'—')}</div></div>
     <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--blue)">Placa</div><div>${escHtml(v.placa||'EN TRÁMITE')}</div></div>
   </div>`;
+}
+function agregarBancoCotizacionRapida(){
+  const nuevo=prompt('Ingresa el nombre de la nueva entidad bancaria:');
+  if(!nuevo||!nuevo.trim())return;
+  const n=nuevo.trim();
+  if(!DB.config.bancoCuentas)DB.config.bancoCuentas=[];
+  if(DB.config.bancoCuentas.some(b=>b.banco.toLowerCase()===n.toLowerCase())){
+    toast('Esta entidad bancaria ya existe','warning');
+  } else {
+    DB.config.bancoCuentas.push({banco:n,cuentas:[]});
+    DB.config.bancos=DB.config.bancoCuentas.map(b=>b.banco);
+    sDB('config');
+    toast('Entidad bancaria "'+n+'" agregada ✓','success');
+  }
+  const sel=document.getElementById('cot-banco');
+  if(sel){
+    const opt=document.createElement('option');
+    opt.value=n;opt.textContent=n;opt.selected=true;
+    sel.appendChild(opt);
+  }
 }
 function guardarCotizacion(idx){
   const cli=document.getElementById('cot-cli').value.trim();
@@ -9578,7 +9601,12 @@ function editarCotizacion(i){
     </div>
     <div class="form-row c3">
       <div class="form-field"><label>Teléfono</label><input type="text" id="cot-tel" value="${escHtml(c.telefono||'')}" maxlength="12" oninput="fmtTelInput(this)"></div>
-      <div class="form-field"><label>Banco</label><select id="cot-banco">${bancos.map(b=>`<option ${b===c.banco?'selected':''}>${escHtml(b)}</option>`).join('')}</select></div>
+      <div class="form-field"><label>Banco</label>
+        <div style="display:flex;gap:4px">
+          <select id="cot-banco" style="flex:1">${bancos.map(b=>`<option ${b===c.banco?'selected':''}>${escHtml(b)}</option>`).join('')}</select>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="agregarBancoCotizacionRapida()" title="Agregar entidad bancaria nueva" style="white-space:nowrap">➕</button>
+        </div>
+      </div>
       <div class="form-field"><label>Fecha</label><input type="date" id="cot-fecha" value="${c.fecha||today()}"></div>
     </div>
     <div class="form-row c3">
