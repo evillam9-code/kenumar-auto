@@ -8668,7 +8668,7 @@ function confirmarVenta(nf){
   DB.caja.push({id:uid(),fecha:venta.fecha,tipo:'ENTRADA',categoria:'Venta de Vehículo',descripcion:`Venta: ${v.codigo} ${v.marca} ${v.modelo}`,monto:inicial||precio,referencia:nf,cuenta,responsable:currentUser.nombre});
   // Si hay pendiente → CxC automática
   if(pendiente>0){
-    const abonadoInicial=inicial+montoRecibido;
+    const abonadoInicial=inicial;
     DB.cxc.push({id:uid(),ventaId:venta.id,factura:nf,cliente:cliNombre,clienteId:cliId,vehiculo:`${v.codigo} ${v.marca} ${v.modelo}`,concepto:'Pendiente de venta',moneda:monedaVenta,total:precio,abonado:abonadoInicial,saldo:pendiente,fecha:venta.fecha,fechaVence:'',status:pendiente<=0?'SALDADO':abonadoInicial>0?'PARCIAL':'PENDIENTE',pagos:[]});
     sDB('cxc');
   }
