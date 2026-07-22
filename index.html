@@ -1893,14 +1893,14 @@ function exportarFeriaPDF(){
       +'<td>'+(v.cotizacionId?'✅':'—')+'</td></tr>';
   }).join('');
   const total=ventas.reduce((a,v)=>a+parseFloat(v.precio||0)*(v.moneda==='USD'?tasa:1),0);
-  const pdfHtml='<!DOCTYPE html><html><head><meta charset=\\"UTF-8\\"><title>Feria</title>'
+  const pdfHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Feria</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:20px;font-size:11px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:5px 8px;border-bottom:1px solid #e2e8f0}@media print{button{display:none}}</style>'
     +'</head><body><h2>🎪 Vendedores (Feria) — '+escHtml(empresa)+'</h2>'
-    +'<p style=\\"color:#64748b;margin-bottom:12px\\">'+ventas.length+' venta(s) — Generado: '+fmtDate(today())+'</p>'
+    +'<p style="color:#64748b;margin-bottom:12px">'+ventas.length+' venta(s) — Generado: '+fmtDate(today())+'</p>'
     +'<table><thead><tr><th>Fecha</th><th>Vendedor</th><th>Cliente</th><th>Vehículo</th><th>Precio</th><th>Banco</th><th>Cotización</th></tr></thead>'
     +'<tbody>'+filas+'</tbody></table>'
-    +'<div style=\\"margin-top:14px;font-weight:700\\">Total: '+fmt(total)+'</div>'
-    +'<br><button onclick=\\"window.print()\\" style=\\"padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700\\">Imprimir</button>'
+    +'<div style="margin-top:14px;font-weight:700">Total: '+fmt(total)+'</div>'
+    +'<br><button onclick="window.print()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">Imprimir</button>'
     +'</body></html>';
   openPopup(pdfHtml);
 }
@@ -1914,16 +1914,16 @@ function exportarFeriaVehiculosPDF(){
     return '<tr><td>'+escHtml(v.codigo)+'</td>'
       +'<td>'+escHtml(v.marca)+' '+escHtml(v.modelo)+' '+(v.anio||'')+(v.color?' — '+escHtml(v.color):'')+'</td>'
       +'<td>'+escHtml(v.vin||'—')+'</td>'
-      +'<td style=\\"font-weight:700\\">'+(ex.precioFeria?usd(ex.precioFeria):'—')+'</td>'
+      +'<td style="font-weight:700">'+(ex.precioFeria?usd(ex.precioFeria):'—')+'</td>'
       +'<td>'+(ex.min?usd(ex.min):'—')+'</td></tr>';
   }).join('');
-  const pdfHtml='<!DOCTYPE html><html><head><meta charset=\\"UTF-8\\"><title>Vehículos Feria</title>'
+  const pdfHtml='<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Vehículos Feria</title>'
     +'<style>body{font-family:Arial,sans-serif;padding:20px;font-size:11px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#0f172a;color:#fff;padding:6px 8px;text-align:left;font-size:10px}td{padding:5px 8px;border-bottom:1px solid #e2e8f0}@media print{button{display:none}}</style>'
     +'</head><body><h2>🚗 Vehículos en Feria — '+escHtml(empresa)+'</h2>'
-    +'<p style=\\"color:#64748b;margin-bottom:12px\\">'+vehDisp.length+' vehículo(s) — Generado: '+fmtDate(today())+'</p>'
+    +'<p style="color:#64748b;margin-bottom:12px">'+vehDisp.length+' vehículo(s) — Generado: '+fmtDate(today())+'</p>'
     +'<table><thead><tr><th>Código</th><th>Vehículo completo</th><th>Chasis</th><th>Precio de venta</th><th>Precio mínimo</th></tr></thead>'
     +'<tbody>'+filas+'</tbody></table>'
-    +'<br><button onclick=\\"window.print()\\" style=\\"padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700\\">Imprimir</button>'
+    +'<br><button onclick="window.print()" style="padding:8px 20px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700">Imprimir</button>'
     +'</body></html>';
   openPopup(pdfHtml);
 }
