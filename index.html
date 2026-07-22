@@ -577,22 +577,8 @@ function preguntarCerrar(onSiCode){
     `<button class="btn btn-secondary" onclick="closeModal()">No, continuar</button>
      <button class="btn btn-primary" onclick="${onSiCode||'closeModal()'}">Sí, cerrar</button>`);
 }
-let _inactTimer=null;
-function resetInactTimer(){
-  clearTimeout(_inactTimer);
-  _inactTimer=setTimeout(()=>{
-    if(currentUser){
-      currentUser=null;
-      closeModal();
-      document.getElementById('app').style.display='none';
-      document.getElementById('login-screen').style.display='flex';
-      document.getElementById('li-user').value='';
-      document.getElementById('li-pass').value='';
-      alert('Sesión cerrada por inactividad (30 min). Inicie sesión nuevamente.');
-    }
-  },1800000);
-}
-['click','keydown','mousemove','touchstart','scroll'].forEach(ev=>document.addEventListener(ev,resetInactTimer,{passive:true}));
+// Cierre automático por inactividad eliminado a petición del negocio:
+// los vendedores en celular perdían la sesión mientras atendían un cliente.
 
 let currentUser=null;
 
@@ -945,6 +931,27 @@ function logBit(modulo,accion,detalle){
 //  MÓDULO VENDEDORES (FERIA) — Vista Vendedor + Configurar Extras
 // ══════════════════════════════════════════════════════════════
 
+// DB.feria se guarda como UN solo documento en Firebase. Antes de aplicar
+// un cambio puntual (extras de un vehículo, una venta, etc.) se relee la
+// versión más reciente para no sobreescribir con una copia local desactualizada
+// lo que otro usuario acabe de guardar (evita perder datos por carrera entre usuarios).
+async function feriaGuardarSeguro(mutarFn){
+  if(window._fbActivo && window._fbDB){
+    try{
+      const snap = await window._fbDB.collection(window._fbCol).doc('feria').get();
+      if(snap.exists){
+        const fresh = JSON.parse(snap.data().valor);
+        if(fresh && typeof fresh==='object' && !Array.isArray(fresh)) DB.feria=fresh;
+      }
+    }catch(e){}
+  }
+  if(!DB.feria)DB.feria={extras:{},ventas:[]};
+  if(!DB.feria.extras)DB.feria.extras={};
+  if(!DB.feria.ventas)DB.feria.ventas=[];
+  mutarFn(DB.feria);
+  sDB('feria');
+}
+
 function feriaRefreshSilente(){
   // Actualiza datos de feria en tiempo real sin resetear el estado del vendedor
   // Si hay un vehículo seleccionado, recarga su panel con datos nuevos
@@ -1158,7 +1165,10 @@ function renderFeria(){
     <div id="feria-panel-vendedor">
       <div class="card" style="margin-bottom:14px">
         <div class="form-field" style="margin-bottom:0;position:relative">
-          <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray)">🔍 Buscar Vehículo (marca, código o chasis)</label>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--gray)">🔍 Buscar Vehículo (marca, código o chasis)</label>
+            <button type="button" onclick="feriaLimpiarBusqueda()" title="Limpiar y buscar otro vehículo" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:2px 6px;color:var(--gray)">🧹</button>
+          </div>
           <input type="text" id="feria-veh-buscar" placeholder="Ej: Honda, código o chasis..." autocomplete="off"
             oninput="feriaFiltrarVehSel(this.value)" onfocus="feriaFiltrarVehSel(this.value)"
             onblur="setTimeout(function(){var b=document.getElementById('feria-veh-sugerencias');if(b)b.style.display='none';},180)"
@@ -1322,6 +1332,16 @@ function feriaElegirVehSel(vid){
   if(box)box.style.display='none';
   feriaCargarVehiculo(vid);
 }
+function feriaLimpiarBusqueda(){
+  const inp=document.getElementById('feria-veh-buscar');
+  const selEl=document.getElementById('feria-veh-sel');
+  const box=document.getElementById('feria-veh-sugerencias');
+  if(inp)inp.value='';
+  if(selEl)selEl.value='';
+  if(box)box.style.display='none';
+  feriaCargarVehiculo('');
+  if(inp)inp.focus();
+}
 function feriaShowTab(tab){
   ['vendedor','extras','historial'].forEach(t=>{
     const panel=document.getElementById('feria-panel-'+t);
@@ -1413,7 +1433,7 @@ function feriaSeleccionarVehModal(vid){
   );
 }
 
-function feriaGenerarCotizacionModal(vid){
+async function feriaGenerarCotizacionModal(vid){
   const v=DB.vehiculos.find(x=>x.id===vid);
   const nombre=document.getElementById('fvm-cli-nombre')?.value.trim();
   const banco=document.getElementById('fvm-banco')?.value;
@@ -1425,7 +1445,6 @@ function feriaGenerarCotizacionModal(vid){
   const precioUSD=parseFloat(ex.precioFeria||0);
   const tasa=parseFloat(DB.config.tasaCambio||60);
 
-  if(!DB.feria)DB.feria={extras:{},ventas:[]};
   const venta={
     id:uid(),fecha:today(),vendedor:currentUser?.nombre||'',
     cliente:nombre,telefono:document.getElementById('fvm-cli-tel')?.value||'',
@@ -1435,11 +1454,9 @@ function feriaGenerarCotizacionModal(vid){
     documento:document.getElementById('fvm-doc')?.value||'',
     cotizacionId:''
   };
-  DB.feria.ventas.push(venta);
   const cotId=_crearCotizacionFeria(venta);
-  const vi=DB.feria.ventas.findIndex(x=>x.id===venta.id);
-  if(vi>=0)DB.feria.ventas[vi].cotizacionId=cotId;
-  sDB('feria');
+  venta.cotizacionId=cotId;
+  await feriaGuardarSeguro(feria=>{ feria.ventas.push(venta); });
   closeModal();
   // Reset selector
   const sel=document.getElementById('feria-veh-sel');
@@ -1620,7 +1637,7 @@ function feriaFotoSubida(){
   if(txt)txt.textContent='✓ Documento adjuntado';
 }
 
-function feriaGenerarCotizacion(){
+async function feriaGenerarCotizacion(){
   const v=window._feriaVehActivo;
   const nombre=document.getElementById('feria-cli-nombre')?.value.trim();
   const banco=document.getElementById('feria-banco-sel')?.value;
@@ -1633,7 +1650,6 @@ function feriaGenerarCotizacion(){
   const tasa=parseFloat(DB.config.tasaCambio||60);
 
   // Registrar venta en historial
-  if(!DB.feria)DB.feria={extras:{},ventas:[]};
   const venta={
     id:uid(),
     fecha:today(),
@@ -1649,13 +1665,11 @@ function feriaGenerarCotizacion(){
     documento:document.getElementById('feria-cli-doc')?.value||'',
     cotizacionId:''
   };
-  DB.feria.ventas.push(venta);
 
   // Crear cotización en módulo Cotizaciones
   const cotId=_crearCotizacionFeria(venta);
-  const vi=DB.feria.ventas.findIndex(x=>x.id===venta.id);
-  if(vi>=0){DB.feria.ventas[vi].cotizacionId=cotId;}
-  sDB('feria');
+  venta.cotizacionId=cotId;
+  await feriaGuardarSeguro(feria=>{ feria.ventas.push(venta); });
 
   // Imprimir cotización inmediatamente
   const ci=DB.cotizaciones.findIndex(c=>c.id===cotId);
@@ -1759,17 +1773,15 @@ function feriaAddCampoExtra(){
   c.appendChild(d);d.querySelector('input').focus();
 }
 
-function feriaGuardarExtras(){
+async function feriaGuardarExtras(){
   const vid=window._feriaAdminVehId;
   if(!vid){toast('Selecciona un vehículo primero','error');return;}
-  if(!DB.feria)DB.feria={extras:{},ventas:[]};
-  if(!DB.feria.extras)DB.feria.extras={};
 
   const beneficios=[...document.querySelectorAll('#fa-beneficios input')].map(i=>i.value.trim()).filter(Boolean);
   const extrasRows=[...document.querySelectorAll('#fa-extras > div')];
   const extrasArr=extrasRows.map(r=>{const ins=[...r.querySelectorAll('input')];return{nombre:(ins[0]?.value||'').trim(),valor:(ins[1]?.value||'').trim()};}).filter(x=>x.nombre);
 
-  DB.feria.extras[vid]={
+  const nuevoExtra={
     precioFeria:parseFloat((document.getElementById('fa-precio')?.value||'0').replace(/,/g,''))||0,
     min:parseFloat((document.getElementById('fa-min')?.value||'0').replace(/,/g,''))||0,
     motor:document.getElementById('fa-motor')?.value||'',
@@ -1781,7 +1793,7 @@ function feriaGuardarExtras(){
     beneficios,
     extras:extrasArr
   };
-  sDB('feria');
+  await feriaGuardarSeguro(feria=>{ feria.extras[vid]=nuevoExtra; });
 
   // El archivo de Carfax se guarda en el vehículo (no en los extras de feria)
   // para que quede sincronizado con Registro de Vehículo.
@@ -1837,11 +1849,13 @@ function _crearCotizacionFeria(venta){
   return cot.id;
 }
 
-function crearCotizacionDesdeFeria(vid){
+async function crearCotizacionDesdeFeria(vid){
   const v=(DB.feria?.ventas||[]).find(x=>x.id===vid);if(!v)return;
   const cotId=_crearCotizacionFeria(v);
-  const vi=DB.feria.ventas.findIndex(x=>x.id===vid);
-  if(vi>=0){DB.feria.ventas[vi].cotizacionId=cotId;sDB('feria');}
+  await feriaGuardarSeguro(feria=>{
+    const vi=feria.ventas.findIndex(x=>x.id===vid);
+    if(vi>=0)feria.ventas[vi].cotizacionId=cotId;
+  });
   toast('Cotización creada ✓','success');
   const ci=DB.cotizaciones.findIndex(c=>c.id===cotId);
   if(ci>=0)setTimeout(()=>imprimirCotizacion(ci),300);
@@ -1853,11 +1867,16 @@ function imprimirCotizacionFeria(cotId){
   if(i>=0)imprimirCotizacion(i);else toast('Cotización no encontrada','error');
 }
 
+async function _eliminarVentaFeriaConfirmada(id){
+  await feriaGuardarSeguro(feria=>{ feria.ventas=feria.ventas.filter(x=>x.id!==id); });
+  closeModal();toast('Eliminado','success');renderFeria();
+}
+
 function eliminarVentaFeria(id){
   if(currentUser?.role!=='admin'&&!canDo('eliminar')){toast('No tienes permiso','error');return;}
   openModal('Eliminar Venta','<p>¿Eliminar esta venta de feria?</p>',
     '<button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>'
-    +'<button class="btn btn-red" onclick="DB.feria.ventas=DB.feria.ventas.filter(x=>x.id!==\''+id+'\');sDB(\'feria\');closeModal();toast(\'Eliminado\',\'success\');renderFeria()">🗑 Eliminar</button>');
+    +'<button class="btn btn-red" onclick="_eliminarVentaFeriaConfirmada(\''+id+'\')">🗑 Eliminar</button>');
 }
 
 function exportarFeriaPDF(){
