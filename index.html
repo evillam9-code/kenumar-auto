@@ -7619,23 +7619,22 @@ function _imprimirHojaCostosVeh(vid,tasa){
   // lo que no coincide con ninguna de las 16 categorías cae en Anexos.
   const categoriaDe=new Map(gastos.map(g=>[g,matchCategoriaFijaGastoVeh(g.tipo)]));
   const anexos=gastos.filter(g=>!categoriaDe.get(g));
-  const fmtMonto=(g)=>(g.moneda==='USD'?'US$ ':'RD$ ')+parseFloat(g.montoFactura||0).toLocaleString(g.moneda==='USD'?'en-US':'es-DO',{minimumFractionDigits:2,maximumFractionDigits:2});
 
   const fila16=(n,g)=>{const esUSD=g.moneda==='USD';return `<tr>
-      <td style="padding:2.5px 7px;color:#64748b">${n}</td>
-      <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
-      <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}</td>
-      <td style="padding:2.5px 7px;text-align:right;font-weight:700;white-space:nowrap">${fmtMonto(g)}</td>
-      <td style="padding:2.5px 7px;text-align:right;color:#64748b">${esUSD?fmtN(equivRD(g),false):'—'}</td>
-      <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
+      <td style="padding:3px 7px;color:#64748b">${n}</td>
+      <td style="padding:3px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
+      <td style="padding:3px 7px"><span class="leader">${escHtml(g.tipo||'—')}<span class="dots"></span></span></td>
+      <td style="padding:3px 7px;text-align:right;font-weight:700;white-space:nowrap">${esUSD?fmtN(g.montoFactura,true):'—'}</td>
+      <td style="padding:3px 7px;text-align:right;font-weight:700;white-space:nowrap">${esUSD?fmtN(equivRD(g),false):fmtN(g.montoFactura,false)}</td>
+      <td style="padding:3px 7px;text-align:center">${pill(g.statusGasto)}</td>
     </tr>`;};
   const filaVacia16=(n,tipo)=>`<tr>
-      <td style="padding:2.5px 7px;color:#cbd5e1">${n}</td>
-      <td style="padding:2.5px 7px;color:#cbd5e1">—</td>
-      <td style="padding:2.5px 7px;color:#94a3b8">${escHtml(tipo)}</td>
-      <td style="padding:2.5px 7px;text-align:right;color:#cbd5e1">—</td>
-      <td style="padding:2.5px 7px;text-align:right;color:#cbd5e1">—</td>
-      <td style="padding:2.5px 7px;text-align:center;color:#cbd5e1">—</td>
+      <td style="padding:3px 7px;color:#cbd5e1">${n}</td>
+      <td style="padding:3px 7px;color:#cbd5e1">—</td>
+      <td style="padding:3px 7px;color:#94a3b8"><span class="leader">${escHtml(tipo)}<span class="dots"></span></span></td>
+      <td style="padding:3px 7px;text-align:right;color:#cbd5e1">—</td>
+      <td style="padding:3px 7px;text-align:right;color:#cbd5e1">—</td>
+      <td style="padding:3px 7px;text-align:center;color:#cbd5e1">—</td>
     </tr>`;
 
   let subtotal16RD=0;
@@ -7652,8 +7651,8 @@ function _imprimirHojaCostosVeh(vid,tasa){
         <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:20px">#</th>
         <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:52px">Fecha</th>
         <th style="text-align:left;padding:3px 7px;font-size:8.5px">Concepto</th>
-        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:100px">Monto</th>
-        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Equiv. RD$</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Monto US$</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:95px">Monto RD$</th>
         <th style="text-align:center;padding:3px 7px;font-size:8.5px;width:62px">Estado</th>
       </tr></thead>
       <tbody>
@@ -7678,10 +7677,10 @@ function _imprimirHojaCostosVeh(vid,tasa){
       </tr></thead>
       <tbody>
         ${anexos.map(g=>`<tr>
-          <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
-          <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}</td>
-          <td style="padding:2.5px 7px;text-align:right;font-weight:700">${fmtN(equivRD(g),false)}</td>
-          <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
+          <td style="padding:3px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
+          <td style="padding:3px 7px"><span class="leader">${escHtml(g.tipo||'—')}<span class="dots"></span></span></td>
+          <td style="padding:3px 7px;text-align:right;font-weight:700">${fmtN(equivRD(g),false)}</td>
+          <td style="padding:3px 7px;text-align:center">${pill(g.statusGasto)}</td>
         </tr>`).join('')}
         <tr style="background:#e2e8f0;font-weight:700">
           <td colspan="2" style="padding:3px 7px;text-align:right;font-size:9.5px;text-transform:uppercase">Subtotal anexos RD$</td>
@@ -7708,8 +7707,10 @@ function _imprimirHojaCostosVeh(vid,tasa){
     .field-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 9px}
     .field-box label{font-size:8.5px;color:#64748b;text-transform:uppercase;font-weight:700;display:block}
     .field-box span{font-size:12px;color:#0f172a;font-weight:700}
-    table{width:100%;border-collapse:collapse;margin-top:3px;font-size:11px}
+    table{width:100%;border-collapse:collapse;margin-top:3px;font-size:12px}
     tr:nth-child(odd) td{background:#f8fafc}
+    .leader{display:flex;align-items:baseline;gap:4px}
+    .leader .dots{flex:1;border-bottom:1px dotted #cbd5e1;margin-bottom:3px;min-width:10px}
     @media print{.noprint{display:none}body{padding:6mm}@page{size:letter portrait;margin:6mm}table{page-break-inside:auto}tr{page-break-inside:avoid}}
   </style></head><body>
   <div class="header">
