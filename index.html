@@ -424,7 +424,7 @@ const defaultConfig={
     {id:'tecnico',nombre:'Técnico'},
     {id:'vendedor',nombre:'Vendedor'}
   ],
-  tiposGastoVeh:['Compra Vehículo','Aduana','Flete','Reparación','Preparación','Documentos','Seguro','Impuestos','Otros'],
+  tiposGastoVeh:['Precio de compra','Grúa USA','Barco o flete','Servicios aduaneros USA','Licencia de compra','Carta Anidive','Compañía importadora','Impuestos DGA','Placa Estimada DGA','Combustible o grúa RD','Chofer o dietas','Piezas','Mecánica','Pintura','Brillo','Limpieza'],
   categoriasGastos:['Alquiler','Servicios','Salarios','Papelería','Mantenimiento','Publicidad','Combustible','Otros'],
   bancos:['Banco Popular','Banco BHD','Banco BanReservas','Banco Santa Cruz','Banco Caribe','Asociación Popular','Otra Entidad']
 };
@@ -435,7 +435,14 @@ const COLORES=['Negro','Blanco','Plata','Gris','Rojo','Azul','Verde','Marrón','
 const TIPOS=['Jeep/SUV','Automóvil','Sedán','Hatchback','Coupé','Convertible/Cabrio','Crossover','Todoterreno 4x4','Station Wagon/Familiar','Camioneta/Pickup','Van/Minivan','Furgoneta','Camión','Motocicleta','Vehículo Eléctrico','Vehículo Híbrido','Deportivo','Lujo/Premium','Otro'];
 const TRACCIONES=['4x2','4x4','AWD','FWD','RWD','Otro'];
 const PROVINCIAS_DO=['Azua','Bahoruco','Barahona','Dajabón','Distrito Nacional','Duarte','El Seibo','Espaillat','Hato Mayor','Hermanas Mirabal','Independencia','La Altagracia','La Romana','La Vega','María Trinidad Sánchez','Monseñor Nouel','Monte Cristi','Monte Plata','Pedernales','Peravia','Puerto Plata','Samaná','San Cristóbal','San José de Ocoa','San Juan','San Pedro de Macorís','Sánchez Ramírez','Santiago','Santiago Rodríguez','Santo Domingo','Valverde'];
-const TIPOS_GASTO_VEH=['Flete/Transporte','Aduana/Impuestos','Reparación/Mecánica','Pintura/Carrocería','Gomas/Ruedas','Batería','Cristales','Tapicería','Aire Acondicionado','Electricidad','Inspección/ITBI','Placa/Registro','Seguro','Publicidad','Comisión','Otros Gastos'];
+const TIPOS_GASTO_VEH=['Precio de compra','Grúa USA','Barco o flete','Servicios aduaneros USA','Licencia de compra','Carta Anidive','Compañía importadora','Impuestos DGA','Placa Estimada DGA','Combustible o grúa RD','Chofer o dietas','Piezas','Mecánica','Pintura','Brillo','Limpieza'];
+// Agrupación fija de la Hoja de Costo de Vehículo (orden = numeración 1-16 del formato impreso)
+const GRUPOS_HOJA_COSTO=[
+  {titulo:'1-5 · Costos de importación USA (US$)',color:'#2563eb',bg:'#eff6ff',texto:'#1e3a8a',tipos:['Precio de compra','Grúa USA','Barco o flete','Servicios aduaneros USA','Licencia de compra']},
+  {titulo:'6-9 · Aduana y legales RD (RD$)',color:'#d97706',bg:'#fffbeb',texto:'#92400e',tipos:['Carta Anidive','Compañía importadora','Impuestos DGA','Placa Estimada DGA']},
+  {titulo:'10-16 · Preparación local (RD$)',color:'#16a34a',bg:'#f0fdf4',texto:'#14532d',tipos:['Combustible o grúa RD','Chofer o dietas','Piezas','Mecánica','Pintura','Brillo','Limpieza']}
+];
+const TIPO_GASTO_PLACA='Placa Estimada DGA';
 
 let DB={
   config:ls('config')||{...defaultConfig},
@@ -468,6 +475,11 @@ let DB={
 if(!Array.isArray(DB.config.roles))DB.config.roles=[];
 if(!DB.config.roles.some(r=>r.id==='vendedor'||(r.nombre||'').toLowerCase()==='vendedor')){
   DB.config.roles.push({id:'vendedor',nombre:'Vendedor'});
+  ss('config',DB.config);
+}
+// Migración: adoptar las 16 categorías fijas de la Hoja de Costo de Vehículo si aún no se habían migrado.
+if(!(DB.config.tiposGastoVeh||[]).includes('Precio de compra')){
+  DB.config.tiposGastoVeh=[...TIPOS_GASTO_VEH];
   ss('config',DB.config);
 }
 // ── Helper universal para abrir popups (evita página en blanco en Edge/Chrome) ──
@@ -3120,9 +3132,10 @@ function formVehiculo(v){
       <div class="form-field"><label>Tipo de Compra</label><select id="v-tipo-compra">${[['IMPORTACION','Importación'],['LOCAL','Compra Local'],['RECIBIDO','Recibido']].map(([val,lbl])=>`<option value="${val}" ${val===v?.tipoCompra?'selected':''}>${lbl}</option>`).join('')}</select></div>
       <div class="form-field"><label>Fecha de Compra</label><input type="date" id="v-fecha" value="${v?.fecha||today()}"></div>
     </div>
-    <div class="form-row c2">
+    <div class="form-row c3">
       <div class="form-field"><label class="required">Chasis / VIN</label><input type="text" id="v-vin" value="${escHtml(v?.vin||'')}" placeholder="Número de chasis o VIN" maxlength="17" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="form-field"><label>Placa</label><input type="text" id="v-placa" value="${escHtml(v?.placa||'')}" placeholder="A000000" maxlength="7" style="text-transform:uppercase" oninput="fmtPlaca(this)"></div>
+      <div class="form-field"><label>Subasta</label><input type="text" id="v-subasta" value="${escHtml(v?.subasta||'')}" placeholder="Copart, IAAI, etc."></div>
     </div>
     <div class="form-row c3">
       <div class="form-field"><label>📋 BL (Bill of Lading)</label>
@@ -3196,6 +3209,7 @@ function guardarVehiculo(id){
     tipoCompra:document.getElementById('v-tipo-compra').value,
     fecha:document.getElementById('v-fecha').value,
     vin,placa:document.getElementById('v-placa').value,
+    subasta:document.getElementById('v-subasta')?.value.trim()||'',
     foto:document.getElementById('v-foto')?.dataset.current||'',
     carfax:document.getElementById('v-carfax')?.dataset.current||'',
     printer:document.getElementById('v-printer')?.dataset.current||'',
@@ -7562,158 +7576,180 @@ function _imprimirHojaCostosVeh(vid,tasa){
   const rnc=DB.config.rnc||'';
   const tel=DB.config.telefono||'';
   const dir=DB.config.direccion||'';
-  const gastosRD=gastos.filter(g=>(g.moneda||'RD$')==='RD$');
-  const gastosUSD=gastos.filter(g=>g.moneda==='USD');
-  const totRD=gastosRD.reduce((a,g)=>a+parseFloat(g.montoFactura||0),0);
-  const pagRD=gastosRD.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0);
-  const pendRD=gastosRD.reduce((a,g)=>a+parseFloat(g.montoPendiente||0),0);
-  const totUSD=gastosUSD.reduce((a,g)=>a+parseFloat(g.montoFactura||0),0);
-  const pagUSD=gastosUSD.reduce((a,g)=>a+parseFloat(g.montoPagado||0),0);
-  const pendUSD=gastosUSD.reduce((a,g)=>a+parseFloat(g.montoPendiente||0),0);
-  const totGenRD=totRD+(totUSD*tasa);
-  const pendGenRD=pendRD+(pendUSD*tasa);
-  const fmtN=(n,usd)=>usd?'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2}):parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});
+  const fmtN=(n,usd)=>usd?'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):parseFloat(n||0).toLocaleString('es-DO',{minimumFractionDigits:2,maximumFractionDigits:2});
   const fechaCorta=(f)=>{if(!f)return'—';const p=f.split('-');return p.length===3?p[2]+'/'+p[1]+'/'+p[0].slice(2):f;};
-  const filaGasto=(g,esUSD)=>{
-    const sc={PAGADO:'#dcfce7|#16a34a',ABONADO:'#fef3c7|#d97706',PENDIENTE:'#fee2e2|#dc2626'};
-    const [bg,col]=(sc[g.statusGasto||'PENDIENTE']||'#fee2e2|#dc2626').split('|');
-    return `<tr>
-      <td style="white-space:nowrap">${fechaCorta(g.fecha)}</td>
-      <td>${escHtml(g.tipo||'—')}</td>
-      <td>${escHtml(g.suplidor||'—')}</td>
-      <td>${escHtml(g.nroFactura||'—')}</td>
-      <td style="text-align:right;font-weight:700">${fmtN(g.montoFactura,esUSD)}</td>
-      <td style="text-align:right;color:#16a34a;font-weight:600">${fmtN(g.montoPagado,esUSD)}</td>
-      <td style="text-align:right;font-weight:700;color:#dc2626">${fmtN(g.montoPendiente,esUSD)}</td>
-      <td style="text-align:center"><span style="background:${bg};color:${col};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">${g.statusGasto||'PENDIENTE'}</span></td>
+  const equivRD=(g)=>g.moneda==='USD'?parseFloat(g.montoFactura||0)*tasa:parseFloat(g.montoFactura||0);
+  const pendRDGasto=(g)=>g.moneda==='USD'?parseFloat(g.montoPendiente||0)*tasa:parseFloat(g.montoPendiente||0);
+  const scStatus={PAGADO:'#dcfce7|#16a34a',ABONADO:'#fef3c7|#d97706',PENDIENTE:'#fee2e2|#dc2626'};
+  const pill=(estado)=>{const[bg,col]=(scStatus[estado||'PENDIENTE']||scStatus.PENDIENTE).split('|');return `<span style="background:${bg};color:${col};padding:1px 8px;border-radius:8px;font-size:9px;font-weight:700;white-space:nowrap">${estado||'PENDIENTE'}</span>`;};
+
+  const tiposOrdenados=GRUPOS_HOJA_COSTO.flatMap(gr=>gr.tipos); // los 16, en el orden del formato original
+  const tiposUSD=new Set(GRUPOS_HOJA_COSTO[0].tipos);
+  const tiposFijos=new Set(tiposOrdenados);
+  const anexos=gastos.filter(g=>!tiposFijos.has(g.tipo));
+
+  const fila16=(n,g,esUSD)=>`<tr>
+      <td style="padding:2.5px 7px;color:#64748b">${n}</td>
+      <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
+      <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}${g.suplidor?` <span style="color:#94a3b8">— ${escHtml(g.suplidor)}</span>`:''}</td>
+      <td style="padding:2.5px 7px;text-align:right;font-weight:700">${fmtN(g.montoFactura,esUSD)}</td>
+      <td style="padding:2.5px 7px;text-align:right;color:#64748b">${esUSD?fmtN(equivRD(g),false):'—'}</td>
+      <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
     </tr>`;
-  };
+  const filaVacia16=(n,tipo)=>`<tr>
+      <td style="padding:2.5px 7px;color:#cbd5e1">${n}</td>
+      <td style="padding:2.5px 7px;color:#cbd5e1">—</td>
+      <td style="padding:2.5px 7px;color:#94a3b8">${escHtml(tipo)}</td>
+      <td style="padding:2.5px 7px;text-align:right;color:#cbd5e1">—</td>
+      <td style="padding:2.5px 7px;text-align:right;color:#cbd5e1">—</td>
+      <td style="padding:2.5px 7px;text-align:center;color:#cbd5e1">—</td>
+    </tr>`;
+
+  let subtotal16RD=0;
+  const filas16=tiposOrdenados.map((tipo,i)=>{
+    const esUSD=tiposUSD.has(tipo);
+    const items=gastos.filter(g=>g.tipo===tipo);
+    if(items.length===0)return filaVacia16(i+1,tipo);
+    return items.map(g=>{subtotal16RD+=equivRD(g);return fila16(i+1,g,esUSD);}).join('');
+  }).join('');
+  const placaRD=gastos.filter(g=>g.tipo===TIPO_GASTO_PLACA).reduce((a,g)=>a+equivRD(g),0);
+  const tabla16Html=`
+    <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:3px 10px;font-weight:700;font-size:10.5px;color:#1e3a8a">Costo de vehículo importado (1-16)</div>
+    <table>
+      <thead><tr style="background:#1e293b;color:#fff">
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:20px">#</th>
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:52px">Fecha</th>
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px">Concepto</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:85px">Monto</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Equiv. RD$</th>
+        <th style="text-align:center;padding:3px 7px;font-size:8.5px;width:62px">Estado</th>
+      </tr></thead>
+      <tbody>
+        ${filas16}
+        <tr style="background:#e2e8f0;font-weight:700">
+          <td colspan="4" style="padding:3px 7px;text-align:right;font-size:9.5px;text-transform:uppercase">Sub-total RD$</td>
+          <td style="padding:3px 7px;text-align:right">${fmtN(subtotal16RD,false)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  const anexosSubtRD=anexos.reduce((a,g)=>a+equivRD(g),0);
+  const anexosHtml=anexos.length?`
+    <div style="background:#f8fafc;border-left:4px solid #64748b;padding:3px 10px;font-weight:700;font-size:10.5px;color:#334155">Anexos y gastos adicionales — todo lo registrado fuera de las 16 categorías</div>
+    <table>
+      <thead><tr style="background:#1e293b;color:#fff">
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:52px">Fecha</th>
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px">Concepto</th>
+        <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:90px">Suplidor</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Monto RD$</th>
+        <th style="text-align:center;padding:3px 7px;font-size:8.5px;width:62px">Estado</th>
+      </tr></thead>
+      <tbody>
+        ${anexos.map(g=>`<tr>
+          <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
+          <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}</td>
+          <td style="padding:2.5px 7px;color:#64748b">${escHtml(g.suplidor||'—')}</td>
+          <td style="padding:2.5px 7px;text-align:right;font-weight:700">${fmtN(equivRD(g),false)}</td>
+          <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
+        </tr>`).join('')}
+        <tr style="background:#e2e8f0;font-weight:700">
+          <td colspan="3" style="padding:3px 7px;text-align:right;font-size:9.5px;text-transform:uppercase">Subtotal anexos RD$</td>
+          <td style="padding:3px 7px;text-align:right">${fmtN(anexosSubtRD,false)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>`:'';
+
+  const totalGeneralRD=subtotal16RD+anexosSubtRD;
+  const sinPlacaRD=totalGeneralRD-placaRD;
+  const conPlacaRD=totalGeneralRD;
+  const pendienteRD=gastos.reduce((a,g)=>a+pendRDGasto(g),0);
+  const nPendientes=gastos.filter(g=>parseFloat(g.montoPendiente||0)>0).length;
+
   const win=window.open('','_blank','width=1000,height=750');
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hoja de Costos — ${escHtml(v.marca+' '+v.modelo)}</title>
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Hoja de Costo — ${escHtml(v.marca+' '+v.modelo)}</title>
   <style>
     *{box-sizing:border-box}
-    body{font-family:Arial,sans-serif;padding:14px 20px;font-size:11px;color:#0f172a;max-width:960px;margin:0 auto}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #2563eb;padding-bottom:8px;margin-bottom:10px}
-    .company-name{font-size:20px;font-weight:900;color:#0f172a}
-    .title-hoja{font-size:24px;font-weight:900;color:#dc2626;text-align:right}
-    .veh-card{background:#0f172a;color:#fff;border-radius:10px;padding:10px 14px;margin-bottom:12px}
-    .veh-card-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;color:#94a3b8}
-    .veh-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-    .veh-field label{font-size:10px;font-weight:700;text-transform:uppercase;color:#94a3b8;display:block;margin-bottom:3px}
-    .veh-field span{font-size:13px;font-weight:700;color:#fff}
-    .veh-cod{background:#2563eb;color:#fff;padding:4px 12px;border-radius:20px;font-size:13px;font-weight:800}
-    table{width:100%;border-collapse:collapse;margin-top:4px;font-size:11px}
-    th{background:#0f172a;color:#fff;padding:5px 8px;text-align:left;font-size:10px;font-weight:700}
-    th:last-child,th:nth-last-child(2),th:nth-last-child(3){text-align:right}
-    td{padding:4px 8px;border-bottom:1px solid #e2e8f0;font-size:11px}
-    tr:nth-child(even){background:#f8fafc}
-    .section-title{background:#f1f5f9;border-left:4px solid #2563eb;padding:5px 10px;font-weight:800;font-size:12px;margin:10px 0 4px;border-radius:0 6px 6px 0}
-    .section-title.usd{border-left-color:#16a34a}
-    .subtotal-row{background:#e2e8f0!important;font-weight:800}
-    .resumen{background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px;margin-top:12px}
-    .res-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
-    .res-box{text-align:center;padding:12px;border-radius:8px;border:1px solid #e2e8f0;background:#fff}
-    .res-label{font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:6px}
-    .res-val{font-size:17px;font-weight:900}
-    @media print{.noprint{display:none}body{padding:6px 10px}@page{size:letter portrait;margin:6mm}.veh-card{page-break-inside:avoid;padding:8px 12px;margin-bottom:8px}.veh-grid{gap:6px}.resumen{page-break-inside:avoid;padding:8px;margin-top:8px}.res-grid{gap:8px}.res-box{padding:8px}table{page-break-inside:auto}tr{page-break-inside:avoid}.section-title{page-break-after:avoid;margin:6px 0 3px}td{padding:3px 8px}th{padding:4px 8px}}
+    body{font-family:Arial,sans-serif;padding:16px 22px;font-size:11px;color:#0f172a;max-width:960px;margin:0 auto}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #dc2626;padding-bottom:8px;margin-bottom:10px}
+    .company-name{font-size:18px;font-weight:900;color:#0f172a}
+    .title-hoja{font-size:19px;font-weight:900;color:#dc2626;text-align:right;text-transform:uppercase}
+    .field-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:5px 9px}
+    .field-box label{font-size:8.5px;color:#64748b;text-transform:uppercase;font-weight:700;display:block}
+    .field-box span{font-size:12px;color:#0f172a;font-weight:700}
+    table{width:100%;border-collapse:collapse;margin-top:3px;font-size:11px}
+    tr:nth-child(odd) td{background:#f8fafc}
+    @media print{.noprint{display:none}body{padding:6mm}@page{size:letter portrait;margin:6mm}table{page-break-inside:auto}tr{page-break-inside:avoid}}
   </style></head><body>
   <div class="header">
-    <div>
-      ${logo?`<img src="${logo}" style="max-height:70px;max-width:180px;object-fit:contain;margin-bottom:8px;display:block">`:``}
-      <div class="company-name">${escHtml(empresa)}</div>
-      ${rnc?`<div style="font-size:11px;color:#475569">RNC: ${escHtml(rnc)}</div>`:''}
-      ${dir?`<div style="font-size:11px;color:#475569">${escHtml(dir)}</div>`:''}
-      ${tel?`<div style="font-size:11px;color:#475569">Tel: ${escHtml(tel)}</div>`:''}
+    <div style="display:flex;gap:10px;align-items:center">
+      ${logo?`<img src="${logo}" style="max-height:48px;max-width:170px;object-fit:contain">`:`<div class="company-name">${escHtml(empresa)}</div>`}
+      <div>
+        ${logo&&empresa?`<div class="company-name" style="font-size:14px">${escHtml(empresa)}</div>`:''}
+        ${rnc?`<div style="font-size:10px;color:#475569">RNC: ${escHtml(rnc)}</div>`:''}
+        ${dir?`<div style="font-size:10px;color:#475569">${escHtml(dir)}</div>`:''}
+        ${tel?`<div style="font-size:10px;color:#475569">Tel: ${escHtml(tel)}</div>`:''}
+      </div>
     </div>
     <div style="text-align:right">
-      <div class="title-hoja">Hoja de Costos</div>
-      <div style="font-size:12px;color:#475569;margin-top:4px">Fecha: ${fmtDate(today())}</div>
-      <div style="font-size:12px;color:#475569">Tasa USD: RD$ ${tasa.toLocaleString('es-DO',{minimumFractionDigits:2})}</div>
-    </div>
-  </div>
-
-  <div class="veh-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="veh-card-title">🚗 Datos del Vehículo</div>
-      <span class="veh-cod">${escHtml(v.codigo||'—')}</span>
-    </div>
-    <div class="veh-grid">
-      <div class="veh-field"><label>Marca</label><span>${escHtml(v.marca||'—')}</span></div>
-      <div class="veh-field"><label>Modelo</label><span>${escHtml(v.modelo||'—')}</span></div>
-      <div class="veh-field"><label>Año</label><span>${escHtml(v.anio||'—')}</span></div>
-      <div class="veh-field"><label>Color</label><span>${escHtml(v.color||'—')}</span></div>
-      <div class="veh-field"><label>Chasis / VIN</label><span>${escHtml(v.vin||'—')}</span></div>
-      <div class="veh-field"><label>Tracción</label><span>${escHtml(v.traccion||'—')}</span></div>
-      <div class="veh-field"><label>Estado</label><span style="background:#16a34a;color:#fff;padding:2px 10px;border-radius:10px;font-size:12px">${escHtml(v.status||'ACTIVO')}</span></div>
-    </div>
-  </div>
-
-  ${gastosRD.length>0?`
-  <div class="section-title">💰 Gastos en Pesos Dominicanos (RD$)</div>
-  <table>
-    <thead><tr><th>Fecha</th><th>Tipo de Gasto</th><th>Suplidor</th><th style="width:70px;font-size:10px">No. Fact.</th><th style="text-align:right">Factura</th><th style="text-align:right">Pagado</th><th style="text-align:right">Pendiente</th><th style="text-align:center">Estado</th></tr></thead>
-    <tbody>
-      ${gastosRD.map(g=>filaGasto(g,false)).join('')}
-      <tr class="subtotal-row">
-        <td colspan="4" style="text-align:right;font-size:11px;text-transform:uppercase">Subtotal RD$:</td>
-        <td style="text-align:right">${fmtN(totRD,false)}</td>
-        <td style="text-align:right;color:#16a34a">${fmtN(pagRD,false)}</td>
-        <td style="text-align:right;color:#dc2626">${fmtN(pendRD,false)}</td>
-        <td></td>
-      </tr>
-    </tbody>
-  </table>`:``}
-
-  ${gastosUSD.length>0?`
-  <div class="section-title usd">💵 Gastos en Dólares Americanos (USD)</div>
-  <table>
-    <thead><tr><th>Fecha</th><th>Tipo de Gasto</th><th>Suplidor</th><th style="width:70px;font-size:10px">No. Fact.</th><th style="text-align:right">Factura USD</th><th style="text-align:right">Pagado USD</th><th style="text-align:right">Pendiente USD</th><th style="text-align:center">Estado</th></tr></thead>
-    <tbody>
-      ${gastosUSD.map(g=>filaGasto(g,true)).join('')}
-      <tr class="subtotal-row">
-        <td colspan="4" style="text-align:right;font-size:11px;text-transform:uppercase">Subtotal USD:</td>
-        <td style="text-align:right">$${fmtN(totUSD,true)}</td>
-        <td style="text-align:right;color:#16a34a">$${fmtN(pagUSD,true)}</td>
-        <td style="text-align:right;color:#dc2626">$${fmtN(pendUSD,true)}</td>
-        <td></td>
-      </tr>
-    </tbody>
-  </table>`:``}
-
-  ${gastos.length===0?`<div style="text-align:center;padding:40px;color:#6b7280;border:2px dashed #e2e8f0;border-radius:10px;margin-top:16px">Sin gastos registrados para este vehículo</div>`:''}
-
-  <div class="resumen">
-    <div style="font-size:14px;font-weight:900;margin-bottom:4px">📊 RESUMEN DE COSTOS</div>
-    <div style="font-size:11px;color:#6b7280">${gastos.length} registro(s) — Tasa aplicada: RD$ ${tasa} x USD</div>
-    <div class="res-grid">
-      <div class="res-box">
-        <div class="res-label">Sub-Total RD$ (Pesos)</div>
-        <div class="res-val">${fmtN(totRD,false)}</div>
-        <div style="font-size:11px;color:#16a34a;margin-top:4px">Pagado: ${fmtN(pagRD,false)}</div>
-        ${pendRD>0?`<div style="font-size:11px;color:#dc2626">Pendiente: ${fmtN(pendRD,false)}</div>`:`<div style="font-size:11px;color:#16a34a">✅ Sin pendiente</div>`}
+      <div class="title-hoja">Hoja de Costo de Vehículo</div>
+      <div style="display:flex;gap:7px;margin-top:6px;justify-content:flex-end">
+        <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:3px 9px;font-size:10px;font-weight:700;color:#92400e">Tasa: RD$ ${tasa.toLocaleString('es-DO',{minimumFractionDigits:2})} x US$1</div>
+        <div style="background:#2563eb;color:#fff;border-radius:6px;padding:3px 11px;font-size:11px;font-weight:700">${escHtml(v.codigo||'—')}</div>
       </div>
-      ${gastosUSD.length>0?`
-      <div class="res-box">
-        <div class="res-label">Sub-Total USD (Dólares)</div>
-        <div class="res-val" style="color:#2563eb">$${fmtN(totUSD,true)}</div>
-        <div style="font-size:11px;color:#16a34a;margin-top:4px">Pagado: $${fmtN(pagUSD,true)}</div>
-        ${pendUSD>0?`<div style="font-size:11px;color:#dc2626">Pendiente: $${fmtN(pendUSD,true)}</div>`:`<div style="font-size:11px;color:#16a34a">✅ Sin pendiente</div>`}
-        <div style="font-size:10px;color:#6b7280;margin-top:4px">≈ RD$ ${fmtN(totUSD*tasa,false)}</div>
-      </div>`:`<div class="res-box" style="background:#f8fafc"><div class="res-label">Gastos USD</div><div style="color:#6b7280;margin-top:8px">Sin gastos en USD</div></div>`}
-      <div class="res-box" style="background:#fef3c7;border-color:#d97706">
-        <div class="res-label" style="color:#d97706">TOTAL GENERAL RD$</div>
-        <div class="res-val" style="color:#d97706">${fmtN(totGenRD,false)}</div>
-        ${pendGenRD>0?`<div style="font-size:11px;color:#dc2626;margin-top:4px;font-weight:700">Pendiente: ${fmtN(pendGenRD,false)}</div>`:`<div style="font-size:11px;color:#16a34a;margin-top:4px">✅ Todo pagado</div>`}
-        <div style="margin-top:6px;padding-top:6px;border-top:1px solid #e8c96e">
-          <div style="font-size:10px;color:#6b7280;font-weight:700">EQUIV. EN USD (tasa RD$ ${tasa})</div>
-          <div style="font-size:16px;font-weight:800;color:#2563eb">$${(totGenRD/tasa).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} USD</div>
-          ${pendGenRD>0?`<div style="font-size:10px;color:#7c3aed;margin-top:2px">Pendiente: $${(pendGenRD/tasa).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})} USD</div>`:''}
+    </div>
+  </div>
+
+  <div style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid #dc2626;border-radius:9px;padding:9px 12px;margin-bottom:9px">
+    <div style="font-size:9px;font-weight:700;color:#334155;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Datos del vehículo</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+      <div class="field-box"><label>Marca / Modelo</label><span>${escHtml(v.marca||'—')} ${escHtml(v.modelo||'')}</span></div>
+      <div class="field-box"><label>Año / Color</label><span>${escHtml(v.anio||'—')} · ${escHtml(v.color||'—')}</span></div>
+      <div class="field-box"><label>Subasta</label><span>${escHtml(v.subasta||'—')}</span></div>
+      <div class="field-box"><label>Fecha de compra</label><span>${fmtDate(v.fecha)||'—'}</span></div>
+      <div class="field-box" style="grid-column:span 2"><label>Chasis / VIN</label><span style="font-family:monospace">${escHtml(v.vin||'—')}</span></div>
+      <div class="field-box"><label>Tracción</label><span>${escHtml(v.traccion||'—')}</span></div>
+      <div class="field-box"><label>Estado</label><span style="background:#dcfce7;color:#16a34a;padding:1px 8px;border-radius:8px;font-size:10px">${escHtml(v.status||'ACTIVO')}</span></div>
+    </div>
+  </div>
+
+  ${tabla16Html}
+  ${anexosHtml}
+  ${gastos.length===0?`<div style="text-align:center;padding:30px;color:#6b7280;border:2px dashed #e2e8f0;border-radius:10px;margin-top:10px">Sin gastos registrados para este vehículo</div>`:''}
+
+  ${nPendientes>0?`<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:7px;padding:5px 10px;font-size:10px;color:#9a3412;text-align:center;margin-top:9px"><b>Pendiente de pago:</b> ${fmtN(pendienteRD,false)} (≈ ${fmtN(pendienteRD/tasa,true)} USD) — ${nPendientes} de ${gastos.length} registro(s) sin pagar</div>`:''}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px">
+    <div>
+      <div style="font-size:8.5px;font-weight:700;color:#1e3a8a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;text-align:center">Total sin placa</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:8px;font-weight:700;color:#1e3a8a;text-transform:uppercase">US$</div>
+          <div style="font-size:14px;font-weight:800;color:#1e3a8a;margin-top:2px">${fmtN(sinPlacaRD/tasa,true)}</div>
+        </div>
+        <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:8px;font-weight:700;color:#1e3a8a;text-transform:uppercase">RD$</div>
+          <div style="font-size:14px;font-weight:800;color:#1e3a8a;margin-top:2px">${fmtN(sinPlacaRD,false)}</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div style="font-size:8.5px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;text-align:center">Total con placa</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="background:#fef3c7;border:1.5px solid #fcd34d;border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:8px;font-weight:700;color:#92400e;text-transform:uppercase">US$</div>
+          <div style="font-size:14px;font-weight:800;color:#92400e;margin-top:2px">${fmtN(conPlacaRD/tasa,true)}</div>
+        </div>
+        <div style="background:#fef3c7;border:1.5px solid #fcd34d;border-radius:8px;padding:7px;text-align:center">
+          <div style="font-size:8px;font-weight:700;color:#92400e;text-transform:uppercase">RD$</div>
+          <div style="font-size:14px;font-weight:800;color:#92400e;margin-top:2px">${fmtN(conPlacaRD,false)}</div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="noprint" style="margin-top:28px;text-align:center">
+  <div class="noprint" style="margin-top:24px;text-align:center">
     <button onclick="window.print()" style="padding:12px 32px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🖨️ Imprimir / Guardar PDF</button>
   </div>
   </body></html>`);
