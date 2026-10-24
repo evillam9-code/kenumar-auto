@@ -443,6 +443,37 @@ const GRUPOS_HOJA_COSTO=[
   {titulo:'10-16 · Preparación local (RD$)',color:'#16a34a',bg:'#f0fdf4',texto:'#14532d',tipos:['Combustible o grúa RD','Chofer o dietas','Piezas','Mecánica','Pintura','Brillo','Limpieza']}
 ];
 const TIPO_GASTO_PLACA='Placa Estimada DGA';
+// Palabras clave para reconocer gastos ya registrados con nombres antiguos/variados y ubicarlos en su renglón fijo de la Hoja de Costo.
+const SINONIMOS_GASTO_VEH={
+  'Precio de compra':['precio de compra','compra de vehiculo','compra vehiculo'],
+  'Grúa USA':['grua usa','grua'],
+  'Barco o flete':['barco','flete'],
+  'Servicios aduaneros USA':['servicios aduaneros','aduanero'],
+  'Licencia de compra':['licencia'],
+  'Carta Anidive':['anidive'],
+  'Compañía importadora':['importadora'],
+  'Impuestos DGA':['impuesto'],
+  'Placa Estimada DGA':['placa'],
+  'Combustible o grúa RD':['combustible'],
+  'Chofer o dietas':['chofer','dieta'],
+  'Piezas':['pieza','repuesto'],
+  'Mecánica':['mecanica','taller'],
+  'Pintura':['pintura'],
+  'Brillo':['brillo','pulido'],
+  'Limpieza':['limpieza']
+};
+const _normTxt=(s)=>(s||'').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+function matchCategoriaFijaGastoVeh(tipoGasto){
+  const t=_normTxt(tipoGasto);
+  if(!t)return null;
+  const exacto=TIPOS_GASTO_VEH.find(c=>_normTxt(c)===t);
+  if(exacto)return exacto;
+  for(const cat of TIPOS_GASTO_VEH){
+    const claves=SINONIMOS_GASTO_VEH[cat]||[];
+    if(claves.some(k=>t.includes(_normTxt(k))))return cat;
+  }
+  return null;
+}
 
 let DB={
   config:ls('config')||{...defaultConfig},
@@ -7584,18 +7615,20 @@ function _imprimirHojaCostosVeh(vid,tasa){
   const pill=(estado)=>{const[bg,col]=(scStatus[estado||'PENDIENTE']||scStatus.PENDIENTE).split('|');return `<span style="background:${bg};color:${col};padding:1px 8px;border-radius:8px;font-size:9px;font-weight:700;white-space:nowrap">${estado||'PENDIENTE'}</span>`;};
 
   const tiposOrdenados=GRUPOS_HOJA_COSTO.flatMap(gr=>gr.tipos); // los 16, en el orden del formato original
-  const tiposUSD=new Set(GRUPOS_HOJA_COSTO[0].tipos);
-  const tiposFijos=new Set(tiposOrdenados);
-  const anexos=gastos.filter(g=>!tiposFijos.has(g.tipo));
+  // Cada gasto se ubica en su renglón fijo por nombre exacto o por palabra clave (matchCategoriaFijaGastoVeh);
+  // lo que no coincide con ninguna de las 16 categorías cae en Anexos.
+  const categoriaDe=new Map(gastos.map(g=>[g,matchCategoriaFijaGastoVeh(g.tipo)]));
+  const anexos=gastos.filter(g=>!categoriaDe.get(g));
+  const fmtMonto=(g)=>(g.moneda==='USD'?'US$ ':'RD$ ')+parseFloat(g.montoFactura||0).toLocaleString(g.moneda==='USD'?'en-US':'es-DO',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  const fila16=(n,g,esUSD)=>`<tr>
+  const fila16=(n,g)=>{const esUSD=g.moneda==='USD';return `<tr>
       <td style="padding:2.5px 7px;color:#64748b">${n}</td>
       <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
-      <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}${g.suplidor?` <span style="color:#94a3b8">— ${escHtml(g.suplidor)}</span>`:''}</td>
-      <td style="padding:2.5px 7px;text-align:right;font-weight:700">${fmtN(g.montoFactura,esUSD)}</td>
+      <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}</td>
+      <td style="padding:2.5px 7px;text-align:right;font-weight:700;white-space:nowrap">${fmtMonto(g)}</td>
       <td style="padding:2.5px 7px;text-align:right;color:#64748b">${esUSD?fmtN(equivRD(g),false):'—'}</td>
       <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
-    </tr>`;
+    </tr>`;};
   const filaVacia16=(n,tipo)=>`<tr>
       <td style="padding:2.5px 7px;color:#cbd5e1">${n}</td>
       <td style="padding:2.5px 7px;color:#cbd5e1">—</td>
@@ -7607,12 +7640,11 @@ function _imprimirHojaCostosVeh(vid,tasa){
 
   let subtotal16RD=0;
   const filas16=tiposOrdenados.map((tipo,i)=>{
-    const esUSD=tiposUSD.has(tipo);
-    const items=gastos.filter(g=>g.tipo===tipo);
+    const items=gastos.filter(g=>categoriaDe.get(g)===tipo);
     if(items.length===0)return filaVacia16(i+1,tipo);
-    return items.map(g=>{subtotal16RD+=equivRD(g);return fila16(i+1,g,esUSD);}).join('');
+    return items.map(g=>{subtotal16RD+=equivRD(g);return fila16(i+1,g);}).join('');
   }).join('');
-  const placaRD=gastos.filter(g=>g.tipo===TIPO_GASTO_PLACA).reduce((a,g)=>a+equivRD(g),0);
+  const placaRD=gastos.filter(g=>categoriaDe.get(g)===TIPO_GASTO_PLACA).reduce((a,g)=>a+equivRD(g),0);
   const tabla16Html=`
     <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:3px 10px;font-weight:700;font-size:10.5px;color:#1e3a8a">Costo de vehículo importado (1-16)</div>
     <table>
@@ -7620,7 +7652,7 @@ function _imprimirHojaCostosVeh(vid,tasa){
         <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:20px">#</th>
         <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:52px">Fecha</th>
         <th style="text-align:left;padding:3px 7px;font-size:8.5px">Concepto</th>
-        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:85px">Monto</th>
+        <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:100px">Monto</th>
         <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Equiv. RD$</th>
         <th style="text-align:center;padding:3px 7px;font-size:8.5px;width:62px">Estado</th>
       </tr></thead>
@@ -7641,7 +7673,6 @@ function _imprimirHojaCostosVeh(vid,tasa){
       <thead><tr style="background:#1e293b;color:#fff">
         <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:52px">Fecha</th>
         <th style="text-align:left;padding:3px 7px;font-size:8.5px">Concepto</th>
-        <th style="text-align:left;padding:3px 7px;font-size:8.5px;width:90px">Suplidor</th>
         <th style="text-align:right;padding:3px 7px;font-size:8.5px;width:90px">Monto RD$</th>
         <th style="text-align:center;padding:3px 7px;font-size:8.5px;width:62px">Estado</th>
       </tr></thead>
@@ -7649,12 +7680,11 @@ function _imprimirHojaCostosVeh(vid,tasa){
         ${anexos.map(g=>`<tr>
           <td style="padding:2.5px 7px;color:#64748b;white-space:nowrap">${fechaCorta(g.fecha)}</td>
           <td style="padding:2.5px 7px">${escHtml(g.tipo||'—')}</td>
-          <td style="padding:2.5px 7px;color:#64748b">${escHtml(g.suplidor||'—')}</td>
           <td style="padding:2.5px 7px;text-align:right;font-weight:700">${fmtN(equivRD(g),false)}</td>
           <td style="padding:2.5px 7px;text-align:center">${pill(g.statusGasto)}</td>
         </tr>`).join('')}
         <tr style="background:#e2e8f0;font-weight:700">
-          <td colspan="3" style="padding:3px 7px;text-align:right;font-size:9.5px;text-transform:uppercase">Subtotal anexos RD$</td>
+          <td colspan="2" style="padding:3px 7px;text-align:right;font-size:9.5px;text-transform:uppercase">Subtotal anexos RD$</td>
           <td style="padding:3px 7px;text-align:right">${fmtN(anexosSubtRD,false)}</td>
           <td></td>
         </tr>
